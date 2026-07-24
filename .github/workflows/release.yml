@@ -4,13 +4,18 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: write
+
 jobs:
-  build-release:
+  release:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout (fetch-depth 0 for tag metadata)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -23,22 +28,41 @@ jobs:
         with:
           gradle-version: '8.5'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Run Unit Tests
         run: ./gradlew testDebugUnitTest
 
-      - name: Build Release APK (unsigned)
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Build Release APK (signed if secrets provided)
         run: ./gradlew assembleRelease
         env:
-          # 如需签名，请配置以下 Secrets:
-          # KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
-          # 当前构建未签名 Release APK
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
+      - name: Rename APKs and generate SHA256SUMS
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
+          RELEASE_APK=$(ls app/build/outputs/apk/release/app-release*.apk | head -n1)
+          cp "$DEBUG_APK" "AnkiDroid-MCP-Bridge-${TAG}-debug.apk"
+          cp "$RELEASE_APK" "AnkiDroid-MCP-Bridge-${TAG}-release.apk"
+          sha256sum "AnkiDroid-MCP-Bridge-${TAG}-debug.apk" "AnkiDroid-MCP-Bridge-${TAG}-release.apk" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: ankidroid-mcp-bridge-release
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
-          if-no-files-found: error
+          files: |
+            AnkiDroid-MCP-Bridge-${{ github.ref_name }}-debug.apk
+            AnkiDroid-MCP-Bridge-${{ github.ref_name }}-release.apk
+            SHA256SUMS.txt
+          fail_on_unmatched_files: true
