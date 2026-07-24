@@ -18,7 +18,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val app = getApplication<Application>()
     private val configRepo = AppConfigRepository(app)
     val tokenManager = TokenManager(app)
-    private val logRepo = AppLogRepository()
+    private val logRepo = AppLogRepository.instance
     private val ankiRepo = AnkiDroidRepository(app)
 
     private val _uiState = MutableStateFlow(UiState())
@@ -146,7 +146,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun testAddNote() {
         viewModelScope.launch {
             try {
-                val deck = ankiRepo.ensureDeck("MCP Test")
+                ankiRepo.ensureDeck("MCP Test")
                 val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
                     .format(java.util.Date())
                 val request = xyz.chenmilin.ankimcpbridge.anki.AddBasicNoteRequest(
