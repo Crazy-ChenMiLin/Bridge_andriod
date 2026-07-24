@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AnkiDroid MCP Bridge</string>
+    <string name="channel_name">MCP 服务</string>
+    <string name="channel_description">AnkiDroid MCP Bridge 服务通知</string>
+    <string name="notification_title">Anki MCP 服务正在运行</string>
+    <string name="notification_text">端口: %1$d | 仅限 localhost</string>
+    <string name="action_stop">停止</string>
+</resources>

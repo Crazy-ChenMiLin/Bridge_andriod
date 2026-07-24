@@ -1,0 +1,210 @@
+package xyz.chenmilin.ankimcpbridge.server
+
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.*
+import xyz.chenmilin.ankimcpbridge.anki.AnkiRepository
+import xyz.chenmilin.ankimcpbridge.logging.AppLogRepository
+import xyz.chenmilin.ankimcpbridge.server.tools.*
+
+/**
+ * MCP Streamable HTTP 协议处理器。
+ * 处理 JSON-RPC 2.0 请求，路由到对应方法。
+ * 自行实现 MCP 必需的最小协议子集。
+ */
+class McpProtocolHandler(
+    private val ankiRepository: AnkiRepository,
+    private val logRepo: AppLogRepository
+) {
+    private val toolRegistry = ToolRegistry()
+    private var initialized = false
+
+    init {
+        registerTools()
+    }
+
+    private fun registerTools() {
+        toolRegistry.register(BridgeStatusTool(ankiRepository))
+        toolRegistry.register(ListDecksTool(ankiRepository))
+        toolRegistry.register(EnsureDeckTool(ankiRepository))
+        toolRegistry.register(AddBasicNoteTool(ankiRepository))
+        toolRegistry.register(AddBasicNotesTool(ankiRepository))
+    }
+
+    fun handleRequest(body: String): String {
+        val request: JsonRpcRequest = try {
+            val json = Json.parseToJsonElement(body).jsonObject
+            parseRequest(json)
+        } catch (e: Exception) {
+            return buildErrorResponse(null, McpErrorCodes.PARSE_ERROR, "Parse error: ${e.message}")
+        }
+
+        return try {
+            when (request.method) {
+                "initialize" -> handleInitialize(request)
+                "notifications/initialized" -> handleNotificationInitialized(request)
+                "ping" -> handlePing(request)
+                "tools/list" -> handleToolsList(request)
+                "tools/call" -> runBlocking { handleToolsCall(request) }
+                else -> buildErrorResponse(
+                    request.id, McpErrorCodes.METHOD_NOT_FOUND,
+                    "Method not found: ${request.method}"
+                )
+            }
+        } catch (e: ToolErrorException) {
+            buildErrorResponse(
+                request.id, McpErrorCodes.INTERNAL_ERROR,
+                e.message ?: "Tool error",
+                JsonObject(mapOf("code" to JsonPrimitive(e.errorCode)))
+            )
+        } catch (e: Exception) {
+            logRepo.error("处理请求异常: ${e.message}")
+            buildErrorResponse(
+                request.id, McpErrorCodes.INTERNAL_ERROR,
+                "Internal error: ${e.message}"
+            )
+        }
+    }
+
+    private fun parseRequest(json: JsonObject): JsonRpcRequest {
+        val method = json["method"]?.jsonPrimitive?.content
+            ?: throw IllegalArgumentException("Missing 'method'")
+        val id = json["id"]
+        val params = json["params"]?.jsonObject
+        return JsonRpcRequest(id = id, method = method, params = params)
+    }
+
+    private fun handleInitialize(request: JsonRpcRequest): String {
+        initialized = true
+        logRepo.info("MCP 客户端已初始化")
+
+        val result = JsonObject(
+            mapOf(
+                "protocolVersion" to JsonPrimitive("2024-11-05"),
+                "capabilities" to JsonObject(mapOf("tools" to JsonObject(emptyMap()))),
+                "serverInfo" to JsonObject(
+                    mapOf(
+                        "name" to JsonPrimitive("ankidroid-mcp-bridge"),
+                        "version" to JsonPrimitive("0.1.0")
+                    )
+                )
+            )
+        )
+        return buildSuccessResponse(request.id, result)
+    }
+
+    private fun handleNotificationInitialized(request: JsonRpcRequest): String {
+        logRepo.info("收到 notifications/initialized")
+        return ""
+    }
+
+    private fun handlePing(request: JsonRpcRequest): String {
+        return buildSuccessResponse(request.id, JsonObject(emptyMap()))
+    }
+
+    private fun handleToolsList(request: JsonRpcRequest): String {
+        if (!initialized) {
+            return buildErrorResponse(
+                request.id, McpErrorCodes.SERVER_NOT_INITIALIZED,
+                "Server not initialized. Send 'initialize' first."
+            )
+        }
+        val tools = toolRegistry.listDefinitions().map { def ->
+            JsonObject(
+                mapOf(
+                    "name" to JsonPrimitive(def.name),
+                    "description" to JsonPrimitive(def.description),
+                    "inputSchema" to def.inputSchema
+                )
+            )
+        }
+        val result = JsonObject(mapOf("tools" to JsonArray(tools)))
+        return buildSuccessResponse(request.id, result)
+    }
+
+    private suspend fun handleToolsCall(request: JsonRpcRequest): String {
+        if (!initialized) {
+            return buildErrorResponse(
+                request.id, McpErrorCodes.SERVER_NOT_INITIALIZED,
+                "Server not initialized"
+            )
+        }
+
+        val params = request.params ?: return buildErrorResponse(
+            request.id, McpErrorCodes.INVALID_PARAMS, "Missing params"
+        )
+
+        val toolName = params["name"]?.jsonPrimitive?.content
+            ?: return buildErrorResponse(
+                request.id, McpErrorCodes.INVALID_PARAMS, "Missing tool name"
+            )
+
+        val tool = toolRegistry.getTool(toolName)
+            ?: return buildErrorResponse(
+                request.id, McpErrorCodes.METHOD_NOT_FOUND,
+                "Tool not found: $toolName",
+                JsonObject(mapOf("code" to JsonPrimitive(BusinessErrorCodes.TOOL_NOT_FOUND)))
+            )
+
+        logRepo.info("调用工具: $toolName")
+
+        return try {
+            val arguments = params["arguments"]?.jsonObject
+            val callResult = tool.call(arguments)
+            val result = JsonObject(
+                mapOf("content" to JsonArray(
+                    callResult.content.map { content ->
+                        JsonObject(
+                            mapOf(
+                                "type" to JsonPrimitive(content.type),
+                                "text" to JsonPrimitive(content.text)
+                            )
+                        )
+                    }
+                ))
+            )
+            buildSuccessResponse(request.id, result)
+        } catch (e: ToolErrorException) {
+            buildErrorResponse(
+                request.id, McpErrorCodes.INTERNAL_ERROR,
+                e.message ?: "Tool error",
+                JsonObject(mapOf("code" to JsonPrimitive(e.errorCode)))
+            )
+        } catch (e: Exception) {
+            logRepo.error("工具 $toolName 执行失败: ${e.message}")
+            buildErrorResponse(
+                request.id, McpErrorCodes.INTERNAL_ERROR,
+                "Tool execution failed: ${e.message}",
+                JsonObject(mapOf("code" to JsonPrimitive(BusinessErrorCodes.INTERNAL_ERROR)))
+            )
+        }
+    }
+
+    private fun buildSuccessResponse(id: JsonElement?, result: JsonElement): String {
+        val responseObj = mutableMapOf<String, JsonElement>(
+            "jsonrpc" to JsonPrimitive("2.0"),
+            "result" to result
+        )
+        if (id != null) responseObj["id"] = id
+        return JsonObject(responseObj).toString()
+    }
+
+    private fun buildErrorResponse(
+        id: JsonElement?,
+        code: Int,
+        message: String,
+        data: JsonElement? = null
+    ): String {
+        val errorObj = mutableMapOf<String, JsonElement>(
+            "code" to JsonPrimitive(code),
+            "message" to JsonPrimitive(message)
+        )
+        if (data != null) errorObj["data"] = data
+
+        val responseObj = mutableMapOf<String, JsonElement>(
+            "jsonrpc" to JsonPrimitive("2.0"),
+            "error" to JsonObject(errorObj)
+        )
+        if (id != null) responseObj["id"] = id
+        return JsonObject(responseObj).toString()
+    }
+}

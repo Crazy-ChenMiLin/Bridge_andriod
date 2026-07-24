@@ -1,0 +1,15 @@
+package xyz.chenmilin.ankimcpbridge.anki
+
+object AnkiErrors {
+    const val ANKIDROID_NOT_INSTALLED = "ANKIDROID_NOT_INSTALLED"
+    const val ANKI_PERMISSION_DENIED = "ANKI_PERMISSION_DENIED"
+    const val ANKI_API_UNAVAILABLE = "ANKI_API_UNAVAILABLE"
+    const val MODEL_NOT_FOUND = "MODEL_NOT_FOUND"
+    const val DECK_OPERATION_FAILED = "DECK_OPERATION_FAILED"
+    const val ADD_NOTE_FAILED = "ADD_NOTE_FAILED"
+    const val PARTIAL_FAILURE = "PARTIAL_FAILURE"
+    const val INVALID_ARGUMENT = "INVALID_ARGUMENT"
+    const val INVALID_FRONT = "INVALID_FRONT"
+    const val INVALID_BACK = "INVALID_BACK"
+    const val BATCH_TOO_LARGE = "BATCH_TOO_LARGE"
+}
