@@ -25,8 +25,6 @@ class McpHttpServer(
     private val logRepo: AppLogRepository
 ) {
     private var server: ApplicationEngine? = null
-    private val authInterceptor = AuthInterceptor(tokenManager)
-    private val protocolHandler = McpProtocolHandler(ankiRepository, logRepo)
 
     suspend fun start() = withContext(Dispatchers.IO) {
         if (server != null) {
@@ -34,51 +32,7 @@ class McpHttpServer(
         }
 
         val engine = embeddedServer(Netty, host = "127.0.0.1", port = port) {
-            install(io.ktor.server.plugins.contentnegotiation.ContentNegotiation) {
-                // 不使用自动序列化，我们手动处理 JSON
-            }
-
-            routing {
-                get("/health") {
-                    call.respondText(
-                        contentType = ContentType.Application.Json,
-                        text = buildHealthResponse()
-                    )
-                }
-
-                post("/mcp") {
-                    val authHeader = call.request.header("Authorization")
-                    val authError = authInterceptor.verify(authHeader)
-                    if (authError != null) {
-                        call.respondText(
-                            status = HttpStatusCode.Unauthorized,
-                            contentType = ContentType.Application.Json,
-                            text = authError
-                        )
-                        return@post
-                    }
-
-                    val body = call.receiveText()
-                    logRepo.debug("收到 MCP 请求")
-
-                    val response = withContext(Dispatchers.Default) {
-                        protocolHandler.handleRequest(body)
-                    }
-
-                    if (response.isNotEmpty()) {
-                        call.respondText(
-                            contentType = ContentType.Application.Json,
-                            text = response
-                        )
-                    } else {
-                        // 通知类请求，返回 202 Accepted
-                        call.respondText(
-                            status = HttpStatusCode.Accepted,
-                            text = ""
-                        )
-                    }
-                }
-            }
+            installMcpRouting(tokenManager, ankiRepository, logRepo)
         }
 
         server = engine
@@ -89,8 +43,63 @@ class McpHttpServer(
         server?.stop(500, 1000)
         server = null
     }
+}
 
-    private fun buildHealthResponse(): String {
-        return """{"status":"ok","service":"ankidroid-mcp-bridge","version":"${BuildConfig.VERSION_NAME}"}"""
+/**
+ * 安装 MCP 的 HTTP 路由。抽成独立函数便于在单元测试中通过 Ktor 的内存引擎
+ * （testApplication）验证 /health 与 /mcp 的行为，无需启动真实 Netty 端口。
+ */
+fun Application.installMcpRouting(
+    tokenManager: TokenManager,
+    ankiRepository: AnkiRepository,
+    logRepo: AppLogRepository
+) {
+    val authInterceptor = AuthInterceptor(tokenManager)
+    val protocolHandler = McpProtocolHandler(ankiRepository, logRepo)
+
+    routing {
+        get("/health") {
+            call.respondText(
+                contentType = ContentType.Application.Json,
+                text = buildHealthResponse()
+            )
+        }
+
+        post("/mcp") {
+            val authHeader = call.request.header("Authorization")
+            val authError = authInterceptor.verify(authHeader)
+            if (authError != null) {
+                call.respondText(
+                    status = HttpStatusCode.Unauthorized,
+                    contentType = ContentType.Application.Json,
+                    text = authError
+                )
+                return@post
+            }
+
+            val body = call.receiveText()
+            logRepo.debug("收到 MCP 请求")
+
+            val response = withContext(Dispatchers.Default) {
+                protocolHandler.handleRequest(body)
+            }
+
+            if (response.isNotEmpty()) {
+                call.respondText(
+                    contentType = ContentType.Application.Json,
+                    text = response
+                )
+            } else {
+                // 通知类请求，返回 202 Accepted
+                call.respondText(
+                    status = HttpStatusCode.Accepted,
+                    text = ""
+                )
+            }
+        }
     }
+}
+
+private fun buildHealthResponse(): String {
+    return """{"status":"ok","service":"ankidroid-mcp-bridge","version":"${BuildConfig.VERSION_NAME}"}"""
 }

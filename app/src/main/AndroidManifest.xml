@@ -25,6 +25,7 @@
         android:label="AnkiDroid MCP Bridge"
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.AnkiMCPBridge">
 
         <activity

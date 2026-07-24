@@ -118,17 +118,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun testHealthCheck() {
         viewModelScope.launch {
-            try {
-                val url = java.net.URL("http://127.0.0.1:${_uiState.value.port}/health")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 3000
-                conn.readTimeout = 3000
-                val body = conn.inputStream.bufferedReader().readText()
+            val result = HealthChecker.check(_uiState.value.port)
+            result.onSuccess { body ->
                 _uiState.update { it.copy(testHealthResult = "OK: $body") }
                 logRepo.info("健康检查成功")
-            } catch (e: Exception) {
-                _uiState.update { it.copy(testHealthResult = "失败: ${e.message}") }
-                logRepo.error("健康检查失败: ${e.message}")
+            }.onFailure { error ->
+                val detail = "${error.javaClass.simpleName}: ${error.message}"
+                _uiState.update { it.copy(testHealthResult = "失败: $detail") }
+                logRepo.error("健康检查失败: $detail")
             }
         }
     }
