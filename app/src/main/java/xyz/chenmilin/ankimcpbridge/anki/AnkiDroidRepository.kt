@@ -44,6 +44,8 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
 
     companion object {
         const val ANKIDROID_PACKAGE = "com.ichi2.anki"
+        /** AnkiDroid 数据库读写权限（需要在 AndroidManifest 中声明）。 */
+        const val READ_WRITE_PERMISSION = "com.ichi2.anki.permission.READ_WRITE_DATABASE"
         private const val BASIC_MODEL_NAME = "MCP Basic"
         private const val FIELD_SEPARATOR = "\u001f"
         /** 初始化异常重试一次时的延迟（毫秒）。 */

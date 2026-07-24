@@ -24,6 +24,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
+    /** 一次性事件：通知 Activity 发起 Android 权限申请。 */
+    private val _permissionRequest = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val permissionRequest: SharedFlow<String> = _permissionRequest.asSharedFlow()
+
     init {
         // 初始加载
         refreshAnkiStatus()
@@ -167,13 +171,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun requestAnkiPermission() {
-        // 引导用户到 AnkiDroid 授权
+        // 由 Activity 发起系统权限申请；若 Activity 未能处理，再引导用户打开 AnkiDroid。
+        _permissionRequest.tryEmit(AnkiDroidRepository.READ_WRITE_PERMISSION)
+        logRepo.info("等待用户授予 AnkiDroid API 权限...")
+    }
+
+    /** Activity 将权限申请结果回传到这里。 */
+    fun onPermissionResult(permission: String, granted: Boolean) {
+        if (granted) {
+            logRepo.info("权限已授权: $permission")
+        } else {
+            logRepo.warn("权限被拒绝: $permission")
+        }
+        refreshAnkiStatus()
+    }
+
+    /** 备用入口：直接打开 AnkiDroid，让用户在 AnkiDroid 设置里启用 API。 */
+    fun openAnkiDroidSettings() {
         try {
             val intent = app.packageManager.getLaunchIntentForPackage("com.ichi2.anki")
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 app.startActivity(intent)
-                logRepo.info("正在打开 AnkiDroid，请在 AnkiDroid 设置中授权 API 访问")
+                logRepo.info("已打开 AnkiDroid，请在其设置中启用 AnkiDroid API")
             } else {
                 logRepo.error("无法打开 AnkiDroid")
             }
