@@ -81,11 +81,14 @@ class FakeAnkiRepository : AnkiRepository {
             succeededIds.add(noteId)
         }
 
+        // 与真实实现保持一致的契约：批量路径不暴露 noteId（noteIdsAvailable=false）。
         return BatchAddResult(
             requested = request.notes.size,
+            submitted = succeededIds.size,
             succeeded = succeededIds.size,
             failed = errors.size,
-            noteIds = succeededIds,
+            noteIds = emptyList(),
+            noteIdsAvailable = false,
             errors = errors
         )
     }

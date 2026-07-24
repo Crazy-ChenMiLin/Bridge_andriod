@@ -20,7 +20,7 @@
     </queries>
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@drawable/ic_launcher_foreground"
         android:label="AnkiDroid MCP Bridge"
         android:supportsRtl="true"
@@ -39,7 +39,12 @@
         <service
             android:name=".service.McpForegroundService"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <!-- Android 14+ 要求 specialUse 前台服务声明子类型 -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="本地 MCP Server（供同机 MCP Client 通过 localhost 调用 AnkiDroid）" />
+        </service>
 
     </application>
 </manifest>
