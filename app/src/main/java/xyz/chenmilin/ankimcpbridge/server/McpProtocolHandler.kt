@@ -9,14 +9,19 @@ import xyz.chenmilin.ankimcpbridge.server.tools.*
 /**
  * MCP Streamable HTTP 协议处理器。
  * 处理 JSON-RPC 2.0 请求，路由到对应方法。
- * 自行实现 MCP 必需的最小协议子集。
+ * 自行实现 MCP 必需的最小协议子集（见 docs/mcp-protocol.md 中关于 MCP Kotlin SDK 选型的说明）。
+ *
+ * 设计说明（修复 v0.1.0）：
+ * - 不再维护全局 `initialized` 可变标志；tools/list 与 tools/call 无需先 initialize 即可调用。
+ * - 业务错误（AnkiDroid 未安装、权限不足、添加失败等）以工具结果返回，并设置 `isError = true`，
+ *   而非 JSON-RPC error，符合 MCP 工具错误语义。
+ * - initialize 支持 protocolVersion 协商：客户端声明支持的版本，服务端回协商后的版本。
  */
 class McpProtocolHandler(
     private val ankiRepository: AnkiRepository,
     private val logRepo: AppLogRepository
 ) {
     private val toolRegistry = ToolRegistry()
-    private var initialized = false
 
     init {
         registerTools()
@@ -51,9 +56,10 @@ class McpProtocolHandler(
                 )
             }
         } catch (e: ToolErrorException) {
+            // 结构性参数错误 -> JSON-RPC error
             buildErrorResponse(
-                request.id, McpErrorCodes.INTERNAL_ERROR,
-                e.message ?: "Tool error",
+                request.id, McpErrorCodes.INVALID_PARAMS,
+                e.message ?: "Invalid params",
                 JsonObject(mapOf("code" to JsonPrimitive(e.errorCode)))
             )
         } catch (e: Exception) {
@@ -74,17 +80,23 @@ class McpProtocolHandler(
     }
 
     private fun handleInitialize(request: JsonRpcRequest): String {
-        initialized = true
         logRepo.info("MCP 客户端已初始化")
+
+        val clientVersion = request.params?.get("protocolVersion")?.jsonPrimitive?.content
+        val negotiated = if (clientVersion == SUPPORTED_PROTOCOL_VERSION) {
+            clientVersion
+        } else {
+            SUPPORTED_PROTOCOL_VERSION
+        }
 
         val result = JsonObject(
             mapOf(
-                "protocolVersion" to JsonPrimitive("2024-11-05"),
+                "protocolVersion" to JsonPrimitive(negotiated),
                 "capabilities" to JsonObject(mapOf("tools" to JsonObject(emptyMap()))),
                 "serverInfo" to JsonObject(
                     mapOf(
                         "name" to JsonPrimitive("ankidroid-mcp-bridge"),
-                        "version" to JsonPrimitive("0.1.0")
+                        "version" to JsonPrimitive(SERVER_VERSION)
                     )
                 )
             )
@@ -102,12 +114,6 @@ class McpProtocolHandler(
     }
 
     private fun handleToolsList(request: JsonRpcRequest): String {
-        if (!initialized) {
-            return buildErrorResponse(
-                request.id, McpErrorCodes.SERVER_NOT_INITIALIZED,
-                "Server not initialized. Send 'initialize' first."
-            )
-        }
         val tools = toolRegistry.listDefinitions().map { def ->
             JsonObject(
                 mapOf(
@@ -122,20 +128,14 @@ class McpProtocolHandler(
     }
 
     private suspend fun handleToolsCall(request: JsonRpcRequest): String {
-        if (!initialized) {
-            return buildErrorResponse(
-                request.id, McpErrorCodes.SERVER_NOT_INITIALIZED,
-                "Server not initialized"
-            )
-        }
-
         val params = request.params ?: return buildErrorResponse(
             request.id, McpErrorCodes.INVALID_PARAMS, "Missing params"
         )
 
         val toolName = params["name"]?.jsonPrimitive?.content
             ?: return buildErrorResponse(
-                request.id, McpErrorCodes.INVALID_PARAMS, "Missing tool name"
+                request.id, McpErrorCodes.INVALID_PARAMS, "Missing tool name",
+                JsonObject(mapOf("code" to JsonPrimitive(BusinessErrorCodes.TOOL_NOT_FOUND)))
             )
 
         val tool = toolRegistry.getTool(toolName)
@@ -150,23 +150,27 @@ class McpProtocolHandler(
         return try {
             val arguments = params["arguments"]?.jsonObject
             val callResult = tool.call(arguments)
+
             val result = JsonObject(
-                mapOf("content" to JsonArray(
-                    callResult.content.map { content ->
-                        JsonObject(
-                            mapOf(
-                                "type" to JsonPrimitive(content.type),
-                                "text" to JsonPrimitive(content.text)
+                mapOf(
+                    "content" to JsonArray(
+                        callResult.content.map { content ->
+                            JsonObject(
+                                mapOf(
+                                    "type" to JsonPrimitive(content.type),
+                                    "text" to JsonPrimitive(content.text)
+                                )
                             )
-                        )
-                    }
-                ))
+                        }
+                    ),
+                    "isError" to JsonPrimitive(callResult.isError)
+                )
             )
             buildSuccessResponse(request.id, result)
         } catch (e: ToolErrorException) {
             buildErrorResponse(
-                request.id, McpErrorCodes.INTERNAL_ERROR,
-                e.message ?: "Tool error",
+                request.id, McpErrorCodes.INVALID_PARAMS,
+                e.message ?: "Invalid params",
                 JsonObject(mapOf("code" to JsonPrimitive(e.errorCode)))
             )
         } catch (e: Exception) {
@@ -206,5 +210,10 @@ class McpProtocolHandler(
         )
         if (id != null) responseObj["id"] = id
         return JsonObject(responseObj).toString()
+    }
+
+    companion object {
+        const val SUPPORTED_PROTOCOL_VERSION = "2024-11-05"
+        const val SERVER_VERSION = "0.1.1"
     }
 }

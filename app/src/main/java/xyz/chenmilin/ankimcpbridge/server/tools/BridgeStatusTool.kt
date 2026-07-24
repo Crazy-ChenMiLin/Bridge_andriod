@@ -1,6 +1,7 @@
 package xyz.chenmilin.ankimcpbridge.server.tools
 
 import kotlinx.serialization.json.*
+import xyz.chenmilin.ankimcpbridge.BuildConfig
 import xyz.chenmilin.ankimcpbridge.anki.AnkiRepository
 import xyz.chenmilin.ankimcpbridge.server.McpTool
 import xyz.chenmilin.ankimcpbridge.server.McpToolCallResult
@@ -29,11 +30,18 @@ class BridgeStatusTool(private val ankiRepository: AnkiRepository) : McpTool {
             "host" to JsonPrimitive("127.0.0.1"),
             "port" to JsonPrimitive(8766),
             "endpoint" to JsonPrimitive("/mcp"),
-            "version" to JsonPrimitive("0.1.0")
+            "version" to JsonPrimitive(BuildConfig.VERSION_NAME),
+            "appVersion" to JsonPrimitive(BuildConfig.VERSION_NAME),
+            "apiHostSpecVersion" to JsonPrimitive(API_HOST_SPEC_VERSION)
         )
         val json = JsonObject(status)
         return McpToolCallResult(
             content = listOf(McpToolContent(text = json.toString()))
         )
+    }
+
+    companion object {
+        /** 本桥接暴露的 MCP Host API 规格版本（与协议实现保持一致，随协议变更递增）。 */
+        const val API_HOST_SPEC_VERSION = "1.0.0"
     }
 }

@@ -90,6 +90,6 @@ class McpHttpServer(
     }
 
     private fun buildHealthResponse(): String {
-        return """{"status":"ok","service":"ankidroid-mcp-bridge","version":"0.1.0"}"""
+        return """{"status":"ok","service":"ankidroid-mcp-bridge","version":"0.1.1"}"""
     }
 }

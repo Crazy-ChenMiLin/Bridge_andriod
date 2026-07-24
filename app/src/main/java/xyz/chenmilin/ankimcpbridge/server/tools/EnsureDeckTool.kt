@@ -63,13 +63,13 @@ class EnsureDeckTool(private val ankiRepository: AnkiRepository) : McpTool {
             )
             McpToolCallResult(content = listOf(McpToolContent(text = result.toString())))
         } catch (e: AnkiDroidNotInstalledException) {
-            throwToolError(BusinessErrorCodes.ANKIDROID_NOT_INSTALLED, e.message ?: "AnkiDroid 未安装")
+            businessError(BusinessErrorCodes.ANKIDROID_NOT_INSTALLED, e.message ?: "AnkiDroid 未安装")
         } catch (e: AnkiPermissionDeniedException) {
-            throwToolError(BusinessErrorCodes.ANKI_PERMISSION_DENIED, e.message ?: "AnkiDroid 权限未授权")
+            businessError(BusinessErrorCodes.ANKI_PERMISSION_DENIED, e.message ?: "AnkiDroid 权限未授权")
         } catch (e: DeckOperationException) {
-            throwToolError(BusinessErrorCodes.DECK_OPERATION_FAILED, e.message ?: "牌组操作失败")
+            businessError(BusinessErrorCodes.DECK_OPERATION_FAILED, e.message ?: "牌组操作失败")
         } catch (e: Exception) {
-            throwToolError(BusinessErrorCodes.INTERNAL_ERROR, e.message ?: "内部错误")
+            businessError(BusinessErrorCodes.INTERNAL_ERROR, e.message ?: "内部错误")
         }
     }
 }

@@ -60,78 +60,37 @@ class AddBasicNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: notes")
 
         if (notesArray.isEmpty()) {
-            throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "notes 不能为空")
+            return businessError(BusinessErrorCodes.INVALID_ARGUMENT, "notes 不能为空")
         }
         if (notesArray.size > 100) {
-            throwToolError(BusinessErrorCodes.BATCH_TOO_LARGE, "一次最多添加 100 张卡片，当前: ${notesArray.size}")
+            return businessError(BusinessErrorCodes.BATCH_TOO_LARGE, "一次最多添加 100 张卡片，当前: ${notesArray.size}")
         }
 
-        // 预校验所有卡片
-        val validationErrors = mutableListOf<BatchError>()
-        val validNotes = mutableListOf<SingleNoteRequest>()
-
-        for ((index, noteElement) in notesArray.withIndex()) {
+        // 解析全部卡片（保留原始顺序，错误索引由 AnkiRepository 按原始下标返回）
+        val notes = notesArray.map { noteElement ->
             val noteObj = noteElement.jsonObject
             val front = noteObj["front"]?.jsonPrimitive?.content ?: ""
             val back = noteObj["back"]?.jsonPrimitive?.content ?: ""
-
-            when {
-                front.isBlank() -> validationErrors.add(
-                    BatchError(index, BusinessErrorCodes.INVALID_FRONT, "第 ${index + 1} 张卡片 front 不能为空")
-                )
-                back.isBlank() -> validationErrors.add(
-                    BatchError(index, BusinessErrorCodes.INVALID_BACK, "第 ${index + 1} 张卡片 back 不能为空")
-                )
-                front.length > 10000 -> validationErrors.add(
-                    BatchError(index, BusinessErrorCodes.INVALID_FRONT, "第 ${index + 1} 张卡片 front 过长")
-                )
-                back.length > 10000 -> validationErrors.add(
-                    BatchError(index, BusinessErrorCodes.INVALID_BACK, "第 ${index + 1} 张卡片 back 过长")
-                )
-                else -> {
-                    val tags = noteObj["tags"]?.jsonArray?.mapNotNull {
-                        val s = it.jsonPrimitive.content.trim()
-                        if (s.isNotBlank()) s else null
-                    }?.distinct() ?: emptyList()
-                    validNotes.add(SingleNoteRequest(front = front, back = back, tags = tags))
-                }
-            }
-        }
-
-        if (validNotes.isEmpty() && validationErrors.isNotEmpty()) {
-            val result = JsonObject(
-                mapOf(
-                    "requested" to JsonPrimitive(notesArray.size),
-                    "succeeded" to JsonPrimitive(0),
-                    "failed" to JsonPrimitive(validationErrors.size),
-                    "noteIds" to JsonArray(emptyList()),
-                    "errors" to JsonArray(validationErrors.map { err ->
-                        JsonObject(
-                            mapOf(
-                                "index" to JsonPrimitive(err.index),
-                                "code" to JsonPrimitive(err.code),
-                                "message" to JsonPrimitive(err.message)
-                            )
-                        )
-                    })
-                )
-            )
-            return McpToolCallResult(content = listOf(McpToolContent(text = result.toString())))
+            val tags = noteObj["tags"]?.jsonArray?.mapNotNull {
+                val s = it.jsonPrimitive.content.trim()
+                if (s.isNotBlank()) s else null
+            }?.distinct() ?: emptyList()
+            SingleNoteRequest(front = front, back = back, tags = tags)
         }
 
         return try {
-            val request = AddBasicNotesRequest(deck = deck.trim(), notes = validNotes)
+            val request = AddBasicNotesRequest(deck = deck.trim(), notes = notes)
             val result = ankiRepository.addBasicNotes(request)
 
-            // 合并预校验错误和 API 返回的错误
-            val allErrors = validationErrors + result.errors
-
+            val allErrors = result.errors
             val json = JsonObject(
                 mapOf(
                     "requested" to JsonPrimitive(notesArray.size),
+                    "submitted" to JsonPrimitive(result.submitted),
                     "succeeded" to JsonPrimitive(result.succeeded),
-                    "failed" to JsonPrimitive(allErrors.size),
+                    "failed" to JsonPrimitive(result.failed),
                     "noteIds" to JsonArray(result.noteIds.map { JsonPrimitive(it) }),
+                    "noteIdsAvailable" to JsonPrimitive(result.noteIdsAvailable),
                     "errors" to JsonArray(allErrors.map { err ->
                         JsonObject(
                             mapOf(
@@ -143,15 +102,19 @@ class AddBasicNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
                     })
                 )
             )
-            McpToolCallResult(content = listOf(McpToolContent(text = json.toString())))
+            // 存在失败（预校验未通过 / 批量部分或全部失败）时标记 isError=true
+            McpToolCallResult(
+                content = listOf(McpToolContent(text = json.toString())),
+                isError = result.failed > 0
+            )
         } catch (e: AnkiDroidNotInstalledException) {
-            throwToolError(BusinessErrorCodes.ANKIDROID_NOT_INSTALLED, e.message ?: "AnkiDroid 未安装")
+            businessError(BusinessErrorCodes.ANKIDROID_NOT_INSTALLED, e.message ?: "AnkiDroid 未安装")
         } catch (e: AnkiPermissionDeniedException) {
-            throwToolError(BusinessErrorCodes.ANKI_PERMISSION_DENIED, e.message ?: "AnkiDroid 权限未授权")
+            businessError(BusinessErrorCodes.ANKI_PERMISSION_DENIED, e.message ?: "AnkiDroid 权限未授权")
         } catch (e: ModelNotFoundException) {
-            throwToolError(BusinessErrorCodes.MODEL_NOT_FOUND, e.message ?: "笔记类型未找到")
+            businessError(BusinessErrorCodes.MODEL_NOT_FOUND, e.message ?: "笔记类型未找到")
         } catch (e: Exception) {
-            throwToolError(BusinessErrorCodes.INTERNAL_ERROR, e.message ?: "内部错误")
+            businessError(BusinessErrorCodes.INTERNAL_ERROR, e.message ?: "内部错误")
         }
     }
 }

@@ -60,11 +60,11 @@ class AddBasicNoteTool(private val ankiRepository: AnkiRepository) : McpTool {
         val back = arguments["back"]?.jsonPrimitive?.content
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: back")
 
-        // 参数校验
-        if (front.isBlank()) throwToolError(BusinessErrorCodes.INVALID_FRONT, "front 不能为空")
-        if (back.isBlank()) throwToolError(BusinessErrorCodes.INVALID_BACK, "back 不能为空")
-        if (front.length > 10000) throwToolError(BusinessErrorCodes.INVALID_FRONT, "front 内容过长（最多10000字符）")
-        if (back.length > 10000) throwToolError(BusinessErrorCodes.INVALID_BACK, "back 内容过长（最多10000字符）")
+        // 参数校验（业务级错误 -> 工具结果 isError=true）
+        if (front.isBlank()) return businessError(BusinessErrorCodes.INVALID_FRONT, "front 不能为空")
+        if (back.isBlank()) return businessError(BusinessErrorCodes.INVALID_BACK, "back 不能为空")
+        if (front.length > 10000) return businessError(BusinessErrorCodes.INVALID_FRONT, "front 内容过长（最多10000字符）")
+        if (back.length > 10000) return businessError(BusinessErrorCodes.INVALID_BACK, "back 内容过长（最多10000字符）")
 
         val tags = parseTags(arguments)
 
@@ -80,15 +80,15 @@ class AddBasicNoteTool(private val ankiRepository: AnkiRepository) : McpTool {
             )
             McpToolCallResult(content = listOf(McpToolContent(text = json.toString())))
         } catch (e: AnkiDroidNotInstalledException) {
-            throwToolError(BusinessErrorCodes.ANKIDROID_NOT_INSTALLED, e.message ?: "AnkiDroid 未安装")
+            businessError(BusinessErrorCodes.ANKIDROID_NOT_INSTALLED, e.message ?: "AnkiDroid 未安装")
         } catch (e: AnkiPermissionDeniedException) {
-            throwToolError(BusinessErrorCodes.ANKI_PERMISSION_DENIED, e.message ?: "AnkiDroid 权限未授权")
+            businessError(BusinessErrorCodes.ANKI_PERMISSION_DENIED, e.message ?: "AnkiDroid 权限未授权")
         } catch (e: ModelNotFoundException) {
-            throwToolError(BusinessErrorCodes.MODEL_NOT_FOUND, e.message ?: "笔记类型未找到")
+            businessError(BusinessErrorCodes.MODEL_NOT_FOUND, e.message ?: "笔记类型未找到")
         } catch (e: AddNoteException) {
-            throwToolError(BusinessErrorCodes.ADD_NOTE_FAILED, e.message ?: "添加卡片失败")
+            businessError(BusinessErrorCodes.ADD_NOTE_FAILED, e.message ?: "添加卡片失败")
         } catch (e: Exception) {
-            throwToolError(BusinessErrorCodes.INTERNAL_ERROR, e.message ?: "内部错误")
+            businessError(BusinessErrorCodes.INTERNAL_ERROR, e.message ?: "内部错误")
         }
     }
 

@@ -48,7 +48,7 @@ data class McpInitializeResult(
     val serverInfo: JsonObject = JsonObject(
         mapOf(
             "name" to JsonPrimitive("ankidroid-mcp-bridge"),
-            "version" to JsonPrimitive("0.1.0")
+            "version" to JsonPrimitive("0.1.1")
         )
     )
 )
@@ -62,7 +62,8 @@ data class McpToolDef(
 
 @Serializable
 data class McpToolCallResult(
-    val content: List<McpToolContent>
+    val content: List<McpToolContent>,
+    val isError: Boolean = false
 )
 
 @Serializable
