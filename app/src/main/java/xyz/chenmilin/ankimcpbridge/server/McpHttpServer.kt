@@ -9,6 +9,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import xyz.chenmilin.ankimcpbridge.BuildConfig
 import xyz.chenmilin.ankimcpbridge.anki.AnkiRepository
 import xyz.chenmilin.ankimcpbridge.config.TokenManager
 import xyz.chenmilin.ankimcpbridge.logging.AppLogRepository
@@ -90,6 +91,6 @@ class McpHttpServer(
     }
 
     private fun buildHealthResponse(): String {
-        return """{"status":"ok","service":"ankidroid-mcp-bridge","version":"0.1.1"}"""
+        return """{"status":"ok","service":"ankidroid-mcp-bridge","version":"${BuildConfig.VERSION_NAME}"}"""
     }
 }

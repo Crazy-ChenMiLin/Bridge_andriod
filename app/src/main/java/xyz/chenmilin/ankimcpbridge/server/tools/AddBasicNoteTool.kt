@@ -8,7 +8,7 @@ class AddBasicNoteTool(private val ankiRepository: AnkiRepository) : McpTool {
 
     override val definition = McpToolDef(
         name = "add_basic_note",
-        description = "向指定牌组添加一张 Basic 类型（正面/背面）卡片。自动确保牌组存在。",
+        description = "向用户 AnkiDroid 的指定牌组添加一张 Basic 类型（正面/背面）卡片。自动确保牌组存在。当对话中出现了值得记忆的知识点时，调用本工具把该知识点固化为一张复习卡片（front=问题/提示，back=答案/解释）。",
         inputSchema = JsonObject(
             mapOf(
                 "type" to JsonPrimitive("object"),

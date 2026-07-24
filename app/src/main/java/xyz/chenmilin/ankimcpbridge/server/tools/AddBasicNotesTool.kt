@@ -8,7 +8,7 @@ class AddBasicNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
 
     override val definition = McpToolDef(
         name = "add_basic_notes",
-        description = "批量向指定牌组添加 Basic 类型卡片。一次最多 100 张。",
+        description = "批量向指定牌组添加 Basic 类型（正面/背面）卡片，一次最多 100 张。当一段对话里提炼出多个值得记忆的知识点时，把整批卡片一次性写入，比反复调用 add_basic_note 更高效。",
         inputSchema = JsonObject(
             mapOf(
                 "type" to JsonPrimitive("object"),
