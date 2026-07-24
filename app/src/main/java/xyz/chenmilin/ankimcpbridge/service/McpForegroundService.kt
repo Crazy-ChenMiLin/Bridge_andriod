@@ -4,6 +4,7 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import kotlinx.coroutines.*
+import xyz.chenmilin.ankimcpbridge.anki.AnkiDroidRepository
 import xyz.chenmilin.ankimcpbridge.anki.AnkiRepository
 import xyz.chenmilin.ankimcpbridge.config.AppConfigRepository
 import xyz.chenmilin.ankimcpbridge.config.TokenManager
@@ -36,7 +37,7 @@ class McpForegroundService : Service() {
         val port = configRepo.getPort()
 
         if (httpServer != null) {
-            // Already running
+            // 已在运行
             ServerStateRepository.setRunning(true)
             return START_STICKY
         }
@@ -44,20 +45,23 @@ class McpForegroundService : Service() {
         val notification = notificationFactory.buildServiceNotification(port)
         startForeground(NotificationFactory.NOTIFICATION_ID, notification)
 
-        startServer(port, notificationFactory)
+        startServer(port)
         return START_STICKY
     }
 
-    private fun startServer(port: Int, notificationFactory: NotificationFactory) {
+    private fun startServer(port: Int) {
         val app = applicationContext
         val tokenManager = TokenManager(app)
-        val configRepo = AppConfigRepository(app)
-        val logRepo = AppLogRepository()
+        val logRepo = AppLogRepository.instance
         val ankiRepo: AnkiRepository = try {
-            createAnkiRepository(app)
+            AnkiDroidRepository(app)
         } catch (e: Exception) {
+            // AnkiDroidRepository 构造本身不发起 I/O，通常不应失败；
+            // 若失败则不启动服务并上报，避免使用假实现掩盖问题。
             logRepo.error("创建 AnkiRepository 失败: ${e.message}")
-            FakeAnkiRepositoryWrapper()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
         }
 
         httpServer = McpHttpServer(
@@ -76,6 +80,7 @@ class McpForegroundService : Service() {
             } catch (e: Exception) {
                 logRepo.error("MCP 服务启动失败: ${e.message}")
                 httpServer = null
+                ServerStateRepository.setRunning(false)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -83,45 +88,23 @@ class McpForegroundService : Service() {
     }
 
     private fun stopServer() {
-        serviceScope.launch {
-            try {
-                httpServer?.stop()
-                httpServer = null
-                ServerStateRepository.setRunning(false)
-            } catch (e: Exception) {
-                ServerStateRepository.setRunning(false)
-            }
-        }
-    }
-
-    private fun createAnkiRepository(context: android.content.Context): AnkiRepository {
-        // 尝试使用真实 AnkiDroid API
+        // 先停止 HTTP Server（同步、阻塞式关闭 Netty），再取消协程作用域，
+        // 避免作用域被取消后关闭协程无法执行导致 server 泄漏。
         try {
-            return xyz.chenmilin.ankimcpbridge.anki.AnkiDroidRepository(context)
+            httpServer?.stop()
         } catch (e: Exception) {
-            throw RuntimeException("AnkiDroidRepository initialization failed", e)
+            // 忽略关闭异常
         }
+        httpServer = null
+        ServerStateRepository.setRunning(false)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        serviceScope.cancel()
         stopServer()
+        serviceScope.cancel()
         ServerStateRepository.setRunning(false)
         super.onDestroy()
     }
-}
-
-/** 当 AnkiDroidRepository 不可用时的回退实现 */
-private class FakeAnkiRepositoryWrapper : AnkiRepository {
-    override fun isAnkiDroidInstalled(): Boolean = false
-    override fun hasPermission(): Boolean = false
-    override suspend fun listDecks(): List<xyz.chenmilin.ankimcpbridge.anki.AnkiDeck> = emptyList()
-    override suspend fun ensureDeck(name: String): xyz.chenmilin.ankimcpbridge.anki.AnkiDeck =
-        throw UnsupportedOperationException("AnkiDroid not available")
-    override suspend fun addBasicNote(request: xyz.chenmilin.ankimcpbridge.anki.AddBasicNoteRequest): xyz.chenmilin.ankimcpbridge.anki.AddNoteResult =
-        throw UnsupportedOperationException("AnkiDroid not available")
-    override suspend fun addBasicNotes(request: xyz.chenmilin.ankimcpbridge.anki.AddBasicNotesRequest): xyz.chenmilin.ankimcpbridge.anki.BatchAddResult =
-        throw UnsupportedOperationException("AnkiDroid not available")
 }
