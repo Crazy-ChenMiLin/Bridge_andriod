@@ -62,7 +62,19 @@ AnkiDroid ContentProvider
 
 从 Google Play 或 [AnkiDroid 官网](https://github.com/ankidroid/Anki-Android/releases) 安装 AnkiDroid。
 
-**已验证版本**: AnkiDroid 2.18+
+> 本应用通过 AnkiDroid 官方 `com.ichi2.anki.flashcards` ContentProvider API 交互，
+> 该 API 在 AnkiDroid 2.x 各版本中保持稳定。下列版本组合经代码层面核对可行，
+> 实际联调请以「手动测试清单」(`docs/manual-test-checklist.md`) 为准。
+
+#### 兼容性参考表
+
+| 项目 | 要求 / 说明 |
+|------|-------------|
+| AnkiDroid | 2.16+（需开启「设置 → 高级 → 允许 API 访问」） |
+| Android 系统 | 8.0（API 26）及以上 |
+| MCP 客户端 | 支持 Streamable HTTP（如 RakaHub），与本机同进程/同设备 |
+| 传输 | 仅 `http://127.0.0.1`（localhost），不支持 `https`、不支持 `0.0.0.0` |
+| 最低应用版本 | v0.1.1 |
 
 ### 2. 安装本 APK
 
@@ -128,7 +140,65 @@ Token 在 App 首页的「Bearer Token」卡片中查看和复制。
 | `list_decks` | 列出所有牌组 |
 | `ensure_deck` | 确保牌组存在（自动创建） |
 | `add_basic_note` | 添加单张 Basic 卡片 |
-| `add_basic_notes` | 批量添加 Basic 卡片（最多 100 张） |
+| `add_basic_notes` | 批量添加 Basic 卡片（最多 100 张）。返回 `requested/submitted/succeeded/failed`；批量路径下 `noteIdsAvailable=false`（不返回单个 noteId，详见下方说明） |
+
+## 批量添加的 Note ID 限制
+
+`add_basic_notes` 使用官方的批量插入语义（等价 `AddContentApi.addNotes`）：一次性
+`bulkInsert` 插入全部通过预校验的卡片，而非循环单条插入。
+
+由于 `bulkInsert` 只返回写入行数、不返回单个 noteId，批量结果的 `noteIds` 恒为空、
+`noteIdsAvailable` 恒为 `false`。这意味着：
+
+- 批量写入的卡片会进入 AnkiDroid **默认牌组**（应用会 best-effort 将本次写入的卡片移动到
+  目标 `deck`，但无法 100% 保证每张都落在指定牌组）。
+- 若需要精确控制牌组、或需要拿到 noteId，请使用 `add_basic_note`（单张）。
+
+返回结构示例：
+
+```json
+{ "requested": 10, "submitted": 9, "succeeded": 9, "failed": 1,
+  "noteIds": [], "noteIdsAvailable": false,
+  "errors": [ { "index": 1, "code": "INVALID_FRONT", "message": "..." } ] }
+```
+
+- `submitted`：通过预校验、真正交给批量插入的卡片数。
+- `failed`：失败数（含预校验未通过与批量写入未成功的部分）；`failed > 0` 时工具结果 `isError=true`。
+- `errors[].index`：对应**原始请求下标**，便于定位是哪张卡片失败。
+
+## 权限模型
+
+本应用通过 AnkiDroid 官方 `com.ichi2.anki.flashcards` ContentProvider API 交互。
+`AndroidManifest.xml` 中已声明权限：
+
+```xml
+<uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE" />
+```
+
+`hasPermission()` 使用正式的 `Context.checkPermission(..., Process.myPid(), Process.myUid())`
+校验本应用是否持有该权限。若未授权，请在 AnkiDroid 中开启「设置 → 高级 → 允许 API 访问」，
+再于本应用点击「刷新」。
+
+## 发布与签名
+
+Release 工作流（`.github/workflows/release.yml`）在推送 `v*` tag 时触发，产出两个 APK：
+
+- `AnkiDroid-MCP-Bridge-<TAG>-debug.apk`（未签名 debug）
+- `AnkiDroid-MCP-Bridge-<TAG>-release.apk`（若提供签名密钥则签名）
+
+版本号由 tag 驱动：`v0.1.1` → `versionName="0.1.1"`、`versionCode=101`
+（计算规则 `major*10000 + minor*100 + patch`），无需手动修改 `build.gradle.kts`。
+
+如需产出**签名**的 release APK，在仓库 `Settings → Secrets` 配置以下四个密钥：
+
+| Secret | 说明 |
+|--------|------|
+| `ANDROID_KEYSTORE_BASE64` | 签名密钥库（JKS）的 Base64 编码 |
+| `ANDROID_KEYSTORE_PASSWORD` | 密钥库密码 |
+| `ANDROID_KEY_ALIAS` | 密钥别名 |
+| `ANDROID_KEY_PASSWORD` | 密钥密码 |
+
+未配置时，release 构建仍会执行但产出**未签名** APK。
 
 ## 故障排查
 

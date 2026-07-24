@@ -16,7 +16,8 @@ class McpProtocolTest {
     @Before
     fun setup() {
         ankiRepo = FakeAnkiRepository()
-        handler = McpProtocolHandler(ankiRepo, AppLogRepository())
+        handler = McpProtocolHandler(ankiRepo, AppLogRepository.instance)
+        AppLogRepository.instance.clear()
     }
 
     // ─── initialize ───
@@ -34,13 +35,24 @@ class McpProtocolTest {
         val result = response.result!!.jsonObject
         assertEquals("2024-11-05", result["protocolVersion"]?.jsonPrimitive?.content)
         assertEquals("ankidroid-mcp-bridge", result["serverInfo"]?.jsonObject?.get("name")?.jsonPrimitive?.content)
+        assertEquals("0.1.1", result["serverInfo"]?.jsonObject?.get("version")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `initialize negotiates supported version when client version differs`() {
+        val request = buildRequest("initialize", mapOf(
+            "protocolVersion" to "2099-01-01",
+            "capabilities" to mapOf<String, Any>()
+        ))
+        val response = parseResponse(handler.handleRequest(request))
+        val result = response.result!!.jsonObject
+        assertEquals(McpProtocolHandler.SUPPORTED_PROTOCOL_VERSION, result["protocolVersion"]?.jsonPrimitive?.content)
     }
 
     // ─── ping ───
 
     @Test
     fun `ping succeeds`() {
-        // 先初始化
         handler.handleRequest(buildRequest("initialize", mapOf(
             "protocolVersion" to "2024-11-05",
             "capabilities" to mapOf<String, Any>()
@@ -52,11 +64,23 @@ class McpProtocolTest {
         assertNotNull(response.result)
     }
 
-    // ─── tools/list ───
+    // ─── tools/list (无需先 initialize) ───
+
+    @Test
+    fun `tools list works without prior initialize`() {
+        val request = buildRequest("tools/list")
+        val response = parseResponse(handler.handleRequest(request))
+        assertNull(response.error)
+        val tools = response.result!!.jsonObject["tools"]!!.jsonArray
+        assertTrue(tools.size >= 5)
+        val toolNames = tools.map { it.jsonObject["name"]!!.jsonPrimitive.content }
+        assertTrue(toolNames.containsAll(
+            listOf("bridge_status", "list_decks", "ensure_deck", "add_basic_note", "add_basic_notes")
+        ))
+    }
 
     @Test
     fun `tools list shows bridge_status`() {
-        // 初始化
         handler.handleRequest(buildRequest("initialize", mapOf(
             "protocolVersion" to "2024-11-05",
             "capabilities" to mapOf<String, Any>()
@@ -67,13 +91,8 @@ class McpProtocolTest {
         assertNull(response.error)
         val tools = response.result!!.jsonObject["tools"]!!.jsonArray
         assertTrue(tools.size >= 5)
-
         val toolNames = tools.map { it.jsonObject["name"]!!.jsonPrimitive.content }
         assertTrue(toolNames.contains("bridge_status"))
-        assertTrue(toolNames.contains("list_decks"))
-        assertTrue(toolNames.contains("ensure_deck"))
-        assertTrue(toolNames.contains("add_basic_note"))
-        assertTrue(toolNames.contains("add_basic_notes"))
     }
 
     // ─── tools/call bridge_status ───
@@ -130,6 +149,7 @@ class McpProtocolTest {
         ))
         val response = parseResponse(handler.handleRequest(request))
         assertNull(response.error)
+        assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
         val content = response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject
         val text = content["text"]!!.jsonPrimitive.content
         val decksJson = Json.parseToJsonElement(text).jsonObject
@@ -151,6 +171,7 @@ class McpProtocolTest {
         ))
         val response = parseResponse(handler.handleRequest(request))
         assertNull(response.error)
+        assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
         val content = response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject
         val text = content["text"]!!.jsonPrimitive.content
         val result = Json.parseToJsonElement(text).jsonObject
@@ -178,6 +199,7 @@ class McpProtocolTest {
         ))
         val response = parseResponse(handler.handleRequest(request))
         assertNull(response.error)
+        assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
         val content = response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject
         val text = content["text"]!!.jsonPrimitive.content
         val result = Json.parseToJsonElement(text).jsonObject
@@ -185,7 +207,104 @@ class McpProtocolTest {
         assertEquals("TestDeck", result["deck"]!!.jsonPrimitive.content)
     }
 
-    // ─── tools/call add_basic_notes ───
+    // ─── 业务错误以 isError=true 形式返回（而非 JSON-RPC error） ───
+
+    @Test
+    fun `add_basic_note with blank front returns isError result not json-rpc error`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+
+        val request = buildRequest("tools/call", mapOf(
+            "name" to "add_basic_note",
+            "arguments" to mapOf(
+                "deck" to "TestDeck",
+                "front" to "   ",
+                "back" to "Answer"
+            )
+        ))
+        val response = parseResponse(handler.handleRequest(request))
+        // 业务错误：仍是成功响应，但 result.isError == true
+        assertNull(response.error)
+        assertNotNull(response.result)
+        assertTrue(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val content = response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject
+        val errJson = Json.parseToJsonElement(content["text"]!!.jsonPrimitive.content).jsonObject
+        assertEquals(BusinessErrorCodes.INVALID_FRONT, errJson["code"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `add_basic_notes with empty notes returns isError result`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+
+        val request = buildRequest("tools/call", mapOf(
+            "name" to "add_basic_notes",
+            "arguments" to mapOf(
+                "deck" to "TestDeck",
+                "notes" to emptyList<Any>()
+            )
+        ))
+        val response = parseResponse(handler.handleRequest(request))
+        assertNull(response.error)
+        assertTrue(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `tool returns isError when anki not installed`() = runTest {
+        ankiRepo.setInstalled(false)
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+
+        val request = buildRequest("tools/call", mapOf(
+            "name" to "add_basic_note",
+            "arguments" to mapOf("deck" to "TestDeck", "front" to "Q", "back" to "A")
+        ))
+        val response = parseResponse(handler.handleRequest(request))
+        assertNull(response.error)
+        assertTrue(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val content = response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject
+        val errJson = Json.parseToJsonElement(content["text"]!!.jsonPrimitive.content).jsonObject
+        assertEquals(BusinessErrorCodes.ANKIDROID_NOT_INSTALLED, errJson["code"]?.jsonPrimitive?.content)
+    }
+
+    // ─── 批量错误索引映射（索引必须对应原始请求位置） ───
+
+    @Test
+    fun `add_basic_notes maps error index to original position`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+
+        val notes = listOf(
+            mapOf("front" to "Q1", "back" to "A1"),
+            mapOf("front" to "  ", "back" to "A2"), // 第 2 张（index 1）front 为空
+            mapOf("front" to "Q3", "back" to "A3")
+        )
+
+        val request = buildRequest("tools/call", mapOf(
+            "name" to "add_basic_notes",
+            "arguments" to mapOf("deck" to "BatchDeck", "notes" to notes)
+        ))
+        val response = parseResponse(handler.handleRequest(request))
+        assertNull(response.error)
+        val result = response.result!!
+        assertTrue(result.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val content = result.jsonObject["content"]!!.jsonArray[0].jsonObject
+        val batch = Json.parseToJsonElement(content["text"]!!.jsonPrimitive.content).jsonObject
+        assertEquals(3, batch["requested"]!!.jsonPrimitive.int)
+        assertEquals(2, batch["succeeded"]!!.jsonPrimitive.int)
+        assertEquals(1, batch["failed"]!!.jsonPrimitive.int)
+        val err = batch["errors"]!!.jsonArray[0].jsonObject
+        assertEquals(1, err["index"]!!.jsonPrimitive.int) // 指向原始第 2 张（0-based）
+        assertEquals(BusinessErrorCodes.INVALID_FRONT, err["code"]!!.jsonPrimitive.content)
+    }
 
     @Test
     fun `tools call add_basic_notes succeeds`() = runTest {
@@ -211,14 +330,17 @@ class McpProtocolTest {
         ))
         val response = parseResponse(handler.handleRequest(request))
         assertNull(response.error)
+        assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
         val content = response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject
         val text = content["text"]!!.jsonPrimitive.content
         val result = Json.parseToJsonElement(text).jsonObject
         assertEquals(10, result["requested"]!!.jsonPrimitive.int)
+        assertEquals(10, result["submitted"]!!.jsonPrimitive.int)
         assertEquals(10, result["succeeded"]!!.jsonPrimitive.int)
+        assertEquals(false, result["noteIdsAvailable"]!!.jsonPrimitive.boolean)
     }
 
-    // ─── 错误处理 ───
+    // ─── 结构性 / 协议错误 ───
 
     @Test
     fun `missing method returns error`() {
@@ -241,53 +363,6 @@ class McpProtocolTest {
         val response = parseResponse(handler.handleRequest(request))
         assertNotNull(response.error)
         assertEquals(McpErrorCodes.METHOD_NOT_FOUND, response.error!!.code)
-    }
-
-    @Test
-    fun `tools list before initialize returns error`() {
-        val request = buildRequest("tools/list")
-        val response = parseResponse(handler.handleRequest(request))
-        assertNotNull(response.error)
-        assertEquals(McpErrorCodes.SERVER_NOT_INITIALIZED, response.error!!.code)
-    }
-
-    // ─── 参数校验 ───
-
-    @Test
-    fun `add_basic_note with blank front returns error`() = runTest {
-        handler.handleRequest(buildRequest("initialize", mapOf(
-            "protocolVersion" to "2024-11-05",
-            "capabilities" to mapOf<String, Any>()
-        )))
-
-        val request = buildRequest("tools/call", mapOf(
-            "name" to "add_basic_note",
-            "arguments" to mapOf(
-                "deck" to "TestDeck",
-                "front" to "   ",
-                "back" to "Answer"
-            )
-        ))
-        val response = parseResponse(handler.handleRequest(request))
-        assertNotNull(response.error)
-    }
-
-    @Test
-    fun `add_basic_notes with empty notes returns error`() = runTest {
-        handler.handleRequest(buildRequest("initialize", mapOf(
-            "protocolVersion" to "2024-11-05",
-            "capabilities" to mapOf<String, Any>()
-        )))
-
-        val request = buildRequest("tools/call", mapOf(
-            "name" to "add_basic_notes",
-            "arguments" to mapOf(
-                "deck" to "TestDeck",
-                "notes" to emptyList<Any>()
-            )
-        ))
-        val response = parseResponse(handler.handleRequest(request))
-        assertNotNull(response.error)
     }
 
     // ─── 辅助方法 ───
