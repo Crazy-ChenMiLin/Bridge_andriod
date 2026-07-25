@@ -106,6 +106,7 @@ class McpProtocolTest {
         val toolNames = response.result!!.jsonObject["tools"]!!.jsonArray
             .map { it.jsonObject["name"]!!.jsonPrimitive.content }
 
+        assertEquals("tools/list 应只暴露当前文档声明的 43 个真实支持工具", 43, toolNames.size)
         assertTrue(toolNames.containsAll(
             listOf(
                 "listDecks", "deckNames", "deckNamesAndIds", "createDeck",
