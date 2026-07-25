@@ -274,18 +274,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 复制“可直接粘贴到 RikkaHub 的 Authorization 请求头值”：`Bearer 1356`。
+     * 复制“可直接粘贴到 RakaHub 的 Authorization 请求头值”：`Bearer 1356`。
      * 用户无需手动输入 Bearer / 空格 / 横杠，复制出来即完整值。
      * 复制后通过 [_copyFeedback] 通知 UI 给出可见反馈（不含 Token）。
      */
-    fun copyRikkaHubAuthorization() {
+    fun copyRakaHubAuthorization() {
         val clipboard = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
                 as android.content.ClipboardManager
         clipboard.setPrimaryClip(
-            android.content.ClipData.newPlainText("RikkaHub Authorization", BridgeAuthConfig.AUTHORIZATION_VALUE)
+            android.content.ClipData.newPlainText("RakaHub Authorization", BridgeAuthConfig.AUTHORIZATION_VALUE)
         )
-        logRepo.info("已复制 RikkaHub Authorization 请求头值")
-        _copyFeedback.tryEmit("已复制，可直接粘贴到 RikkaHub")
+        logRepo.info("已复制 RakaHub Authorization 请求头值")
+        _copyFeedback.tryEmit("已复制，可直接粘贴到 RakaHub")
     }
 
     fun clearLogs() {

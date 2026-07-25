@@ -4,7 +4,7 @@
 
 1. RakaHub 已安装在**同一台** Android 手机上
 2. AnkiDroid MCP Bridge 已安装并运行
-3. 已获取 Bearer Token
+3. 已确认固定请求头值为 `Bearer 1356`
 
 ## 配置步骤
 
@@ -19,8 +19,8 @@
 
 在 App 首页：
 - 复制 MCP 地址：点击「复制地址」按钮，得到 `http://127.0.0.1:8766/mcp`
-- 复制 Authorization 值：点击 **「复制到 RikkaHub」** 按钮。
-  该按钮已经把 `Bearer <token>` 拼好（自带 Bearer 前缀和空格），**直接就是 RakaHub 需要的完整请求头值**，
+- 复制 Authorization 值：点击 **「复制到 RakaHub」** 按钮。
+  该按钮已经把 `Bearer 1356` 拼好（自带 Bearer 前缀和空格），**直接就是 RakaHub 需要的完整请求头值**，
   **无需手动输入 Bearer 或空格**。
 
 ### 3. 在 RakaHub 中添加 MCP Server
@@ -37,10 +37,9 @@
 
 | 名称 | 值 |
 |------|-----|
-| Authorization | 长按粘贴第 2 步「复制到 RikkaHub」得到的完整内容 |
+| Authorization | `Bearer 1356` |
 
-> 不要自己拼 `Bearer`。App 复制出来的内容已经是 `Bearer a1b2c3d4e5f6...`（32 字节，64 位十六进制字符），
-> 直接粘贴即可，避免 `Bearer-Token` / `BearerToken` / 空格不对等常见错误。
+> 不要自己拼 `Bearer`。App 复制出来的内容严格等于 `Bearer 1356`，不包含换行、前后空格、引号、冒号或 `Authorization:`。
 
 ## 验证连接
 
@@ -84,9 +83,9 @@ Java 基础知识：
 1. 确认 MCP Bridge 服务正在运行（查看通知栏）
 2. 确认 RakaHub 和 Bridge 在同一台手机上
 3. 确认地址是 `http://127.0.0.1:8766/mcp`（注意是 http 不是 https）
-4. 确认 Authorization 头的值来自 App 的「复制到 RikkaHub」按钮（已含 `Bearer ` 前缀），
+4. 确认 Authorization 头的值来自 App 的「复制到 RakaHub」按钮（已含 `Bearer ` 前缀），
    不要手动在前面再加 `Bearer`
 
-### Token 过期
+### Token 是否会变化
 
-如果在 App 中重新生成了 Token，需重新点击「复制到 RikkaHub」并到 RakaHub 更新 Authorization 头的值。
+不会变化。当前版本固定使用 `Bearer 1356`，App 重启、服务重启、覆盖安装或重装后都保持一致，RakaHub 只需配置一次。

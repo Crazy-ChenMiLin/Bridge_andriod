@@ -7,7 +7,7 @@
 - **端点**: `/mcp`
 - **数据格式**: JSON-RPC 2.0
 - **Content-Type**: `application/json`
-- **鉴权**: `Authorization: Bearer <token>`
+- **鉴权**: `Authorization: Bearer 1356`
 
 ## 支持的 MCP 方法
 

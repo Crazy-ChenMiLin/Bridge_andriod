@@ -17,7 +17,7 @@
 - [x] tools/call
 - [x] bridge_status 工具
 - [x] Bearer Token 鉴权 (AuthInterceptor)
-- [x] TokenManager (SecureRandom, 32 bytes)
+- [x] TokenManager（固定本机 Token 1356）
 - [x] AppConfigRepository (端口持久化)
 
 ### 阶段 3：AnkiDroid 集成
@@ -38,7 +38,7 @@
 ### 阶段 5：UI
 - [x] AnkiDroid 状态显示
 - [x] MCP 服务状态显示
-- [x] Token 显示/隐藏/复制/重新生成
+- [x] Token 显示/复制（固定显示 1356，无刷新入口）
 - [x] 端口设置 (服务停止时可修改)
 - [x] 测试按钮 (健康检查、读取牌组、添加卡片)
 - [x] 确认对话框 (添加测试卡片)
@@ -61,7 +61,7 @@
 
 针对 v0.1.0 的已知缺陷进行了修复，并补充测试与文档：
 
-- [x] **TokenManager**：token 状态改为进程内唯一（companion 共享），`regenerateToken` 同时更新内存与持久化，旧 token 在所有实例（含运行中的 MCP Server）中立即失效；新增 `TokenManagerTest`。
+- [x] **TokenManager**：v0.1.1 曾将 token 状态改为进程内唯一并补充测试；v0.2.3 起已改为固定本机 Token `1356`，不再生成、持久化或刷新动态 Token。
 - [x] **前台服务生命周期**：`onDestroy` 先同步停止 HTTP Server 再取消协程作用域，避免 Netty 泄漏；移除 `FakeAnkiRepositoryWrapper` 回退实现。
 - [x] **线程**：删除虚假的 `withTimeout` 封装，直接调用 `ContentResolver` 查询。
 - [x] **日志**：`AppLogRepository` 改为进程级单例（`.instance`），UI 与服务共享同一份日志。

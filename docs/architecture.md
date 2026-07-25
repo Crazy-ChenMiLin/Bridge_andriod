@@ -97,10 +97,10 @@ AnkiDroid MCP Bridge APK
 - 测试实现：FakeAnkiRepository（内存）
 
 ### TokenManager
-- SecureRandom 生成 32 字节 Token（64 位十六进制）
-- 进程内唯一“活跃 token”状态，所有实例共享
-- 持久化到 SharedPreferences
-- 支持重新生成：内存与持久化同时更新，**旧 Token 在所有实例（含运行中的 MCP Server）中立即失效**
+- 固定返回本机调试 Token `1356`
+- 标准请求头值为 `Authorization: Bearer 1356`
+- 不生成随机 Token，不保存动态 Token，也不提供运行时刷新入口
+- 新版本不再读取旧版 `ankimcpbridge_token` / `bearer_token` 数据；启动时可清理旧数据
 
 ### AppConfigRepository
 - 端口配置持久化

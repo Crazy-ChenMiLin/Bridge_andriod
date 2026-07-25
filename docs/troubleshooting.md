@@ -16,8 +16,8 @@
 
 **排查步骤**:
 1. 确认已正确复制 Token
-2. 检查请求头格式：`Authorization: Bearer <token>`（注意 Bearer 后有空格）
-3. 是否重新生成了 Token（旧 Token 立即失效）
+2. 检查请求头格式：`Authorization: Bearer 1356`（注意 Bearer 后有空格）
+3. 确认没有把请求头名称一起粘到值里；RakaHub 的请求头名称是 `Authorization`，请求头值只填 `Bearer 1356`
 
 ## AnkiDroid 未安装
 

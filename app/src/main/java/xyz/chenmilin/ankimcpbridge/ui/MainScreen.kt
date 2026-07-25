@@ -181,10 +181,10 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { viewModel.copyRikkaHubAuthorization() }) {
+                        OutlinedButton(onClick = { viewModel.copyRakaHubAuthorization() }) {
                             Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("复制到 RikkaHub")
+                            Text("复制到 RakaHub")
                         }
                         OutlinedButton(onClick = { viewModel.copyToClipboard("http://${state.host}:${state.port}/mcp") }) {
                             Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -194,7 +194,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "已自动包含 Bearer 前缀，复制后直接粘贴到 RikkaHub 的“请求头值”中。",
+                        "已自动包含 Bearer 前缀，复制后直接粘贴到 RakaHub 的“请求头值”中。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

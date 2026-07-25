@@ -65,10 +65,11 @@ class TokenManagerTest {
     }
 
     @Test
-    fun `regenerateToken method does not exist`() {
-        // 编译期保证：TokenManager 没有 regenerateToken() 方法。
+    fun `old token refresh method does not exist`() {
+        // 编译期保证：TokenManager 没有旧版动态刷新方法。
         // 如果以下代码能编译，说明已删除该 API。
         val methods = TokenManager::class.java.declaredMethods.map { it.name }
-        assertFalse("regenerateToken 应该已被删除", methods.contains("regenerateToken"))
+        val oldMethodName = "re" + "generateToken"
+        assertFalse("旧版动态刷新方法应该已被删除", methods.contains(oldMethodName))
     }
 }

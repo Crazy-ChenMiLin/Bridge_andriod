@@ -1,7 +1,7 @@
 package xyz.chenmilin.ankimcpbridge.ui
 
 /**
- * 把原始 Token 拼成标准的 Authorization 请求头值：`Bearer <token>`。
+ * 把原始 Token 拼成标准的 Authorization 请求头值，例如 `Bearer 1356`。
  *
  * 设计为纯函数，便于单元测试，且把“拼 Token”的易错点集中在一处，避免：
  * - 漏掉 Bearer 与 Token 之间的英文空格；

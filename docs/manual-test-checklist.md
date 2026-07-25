@@ -7,15 +7,16 @@
 > 1. 安装 AnkiDroid 并至少打开一次（生成数据库）。
 > 2. 在 AnkiDroid 中开启「设置 → 高级 → 允许 API 访问」。
 > 3. 安装本应用 Debug/Release APK，打开后点击「启动服务」。
-> 4. 记录首页「Bearer Token」与端口（默认 8766）。
+> 4. 确认首页显示「固定调试 Token」为 `1356`，端口默认为 8766。
 
 ---
 
 ## A. 应用基础
 
 - [ ] 应用首页正常显示，无崩溃。
-- [ ] 「Bearer Token」非空（64 位十六进制）。
-- [ ] 点击「重新生成 Token」后，旧 Token 立即失效（用旧 Token 调用返回 401），新 Token 生效。
+- [ ] 「固定调试 Token」严格显示 `1356`。
+- [ ] UI 中不存在任何 Token 刷新按钮或隐藏入口。
+- [ ] 点击「复制到 RakaHub」后，剪贴板内容严格等于 `Bearer 1356`，不含换行、前后空格、引号、冒号或 `Authorization:`。
 - [ ] 状态显示 `AnkiDroid 已安装 = true`、`权限已授权 = true`。
 - [ ] 点击「启动服务」后，状态栏出现常驻通知。
 - [ ] 点击通知的「停止」或首页「停止服务」后，通知消失，服务停止。
@@ -25,7 +26,7 @@
 - [ ] `curl http://127.0.0.1:8766/health` 返回
       `{"status":"ok","service":"ankidroid-mcp-bridge","version":"0.1.1"}`。
 
-## C. MCP 协议（`POST /mcp`，需 `Authorization: Bearer <token>`）
+## C. MCP 协议（`POST /mcp`，需 `Authorization: Bearer 1356`）
 
 可用 `python3 scripts/smoke_test.py` 或 `curl` 验证。未授权访问应返回 401。
 
@@ -78,7 +79,7 @@
 curl -s http://127.0.0.1:8766/health
 
 # 假设 TOKEN 已导出
-export TOKEN="你的BearerToken"
+export TOKEN="1356"
 
 # initialize
 curl -s -X POST http://127.0.0.1:8766/mcp \

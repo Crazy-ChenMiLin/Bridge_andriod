@@ -13,7 +13,7 @@
 - RakaHub 已添加本桥接为 MCP Server：
   - 类型：Streamable HTTP
   - 地址：`http://127.0.0.1:8766/mcp`
-  - 认证：点击本 App 内「复制到 RikkaHub」按钮，把得到的完整值（已含 `Bearer ` 前缀）
+  - 认证：点击本 App 内「复制到 RakaHub」按钮，把得到的完整值 `Bearer 1356`（已含 `Bearer ` 前缀）
     直接粘贴到 RakaHub 的「请求头值」中，**不要手动输入 Bearer 或空格**
 - RakaHub 能列出 9 个工具即为连接成功
 
@@ -118,7 +118,7 @@ MCP 工具是无状态的：`ensure_deck` 只负责“确保某个牌组存在�
 
 | 现象 | 原因 | 处理 |
 |------|------|------|
-| RakaHub 连不上 | 服务没启动 / 端口不对 / 鉴权值错 | App 内启动服务，核对地址，并用「复制到 RikkaHub」复制 Authorization 值（勿手输 Bearer） |
+| RakaHub 连不上 | 服务没启动 / 端口不对 / 鉴权值错 | App 内启动服务，核对地址，并用「复制到 RakaHub」复制 Authorization 值（勿手输 Bearer） |
 | 工具调用报权限错误 | AnkiDroid 未授权 | App 内点「授权 AnkiDroid」并允许 |
 | add_note 报 FIELD_NOT_FOUND | 字段名拼错或多了未知字段 | 先 get_note_type 拿准确字段名再生成 fields |
 | 卡片没进目标牌组 | 用了批量接口且 AnkiDroid 未返回 noteId | 属已知限制（批量路径）不影响卡片写入；单张接口可精确进组 |
