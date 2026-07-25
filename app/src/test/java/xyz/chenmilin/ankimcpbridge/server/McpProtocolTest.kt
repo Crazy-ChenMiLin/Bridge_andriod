@@ -322,6 +322,41 @@ class McpProtocolTest {
     }
 
     @Test
+    fun `pc compatible addNotes accepts AnkiConnect per-note deck and model shape`() = runTest {
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNotes",
+                "arguments" to mapOf(
+                    "notes" to listOf(
+                        mapOf(
+                            "deckName" to "PC Per Note A",
+                            "modelName" to "Basic",
+                            "fields" to mapOf("Front" to "Per note Q1", "Back" to "Per note A1")
+                        ),
+                        mapOf(
+                            "deckName" to "PC Per Note B",
+                            "modelName" to "Basic",
+                            "fields" to mapOf("Front" to "Per note Q2", "Back" to "Per note A2"),
+                            "tags" to listOf("per-note")
+                        )
+                    )
+                )
+            ))
+        ))
+        assertNull(response.error)
+        assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val noteIds = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray
+        assertEquals(2, noteIds.size)
+        assertTrue(noteIds.all { it.jsonPrimitive.long > 0 })
+
+        val decks = ankiRepo.listDecks().map { it.name }
+        assertTrue(decks.contains("PC Per Note A"))
+        assertTrue(decks.contains("PC Per Note B"))
+    }
+
+    @Test
     fun `pc compatible addNote skips duplicates unless explicitly allowed`() = runTest {
         val first = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(

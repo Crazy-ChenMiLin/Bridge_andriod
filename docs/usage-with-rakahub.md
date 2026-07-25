@@ -49,7 +49,7 @@
 | `modelNames` | 列出笔记类型名称 |
 | `modelFieldNames` | 按 `modelName` 获取字段名 |
 | `addNote` | 按 `deckName` + `modelName` + `fields` 写入单条笔记；成功返回 noteId，重复返回 `null` |
-| `addNotes` | 按同一个 `deckName` + `modelName` 批量写入 ≤100 条；返回 noteId/`null` 数组 |
+| `addNotes` | 批量写入 ≤100 条；支持 PC 常见的每条 note 自带 `deckName`/`modelName`，也支持顶层共享 `deckName`/`modelName`；返回 noteId/`null` 数组 |
 | `findNotes` | 使用 Anki 搜索语法查找 noteId |
 | `notesInfo` | 查询 note 的字段、标签、笔记类型；字段形状为 `fields.字段名.value/order` |
 | `updateNoteFields` | 更新已有 note 的字段 |

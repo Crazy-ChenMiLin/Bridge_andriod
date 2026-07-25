@@ -308,7 +308,7 @@ class PcAddNoteTool(private val ankiRepository: AnkiRepository) : McpTool {
 class PcAddNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
     override val definition = McpToolDef(
         name = "addNotes",
-        description = "PC Anki MCP compatible alias: add up to 100 notes sharing deckName and modelName.",
+        description = "PC Anki MCP compatible alias: add up to 100 notes. Supports AnkiConnect-style per-note deckName/modelName and the Android bridge's shared top-level deckName/modelName.",
         inputSchema = JsonObject(
             mapOf(
                 "type" to JsonPrimitive("object"),
@@ -327,29 +327,37 @@ class PcAddNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
                         )
                     )
                 ),
-                "required" to JsonArray(listOf(JsonPrimitive("deckName"), JsonPrimitive("modelName"), JsonPrimitive("notes")))
+                "required" to JsonArray(listOf(JsonPrimitive("notes")))
             )
         )
     )
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult {
-        val deckName = arguments?.get("deckName")?.jsonPrimitive?.content
-            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: deckName")
-        if (deckName.isBlank()) return pcBusinessError(BusinessErrorCodes.DECK_NAME_EMPTY, "deckName 不能为空")
-        val modelName = arguments["modelName"]?.jsonPrimitive?.content
-            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: modelName")
-        val notesArray = arguments["notes"]?.jsonArray
+        val args = arguments ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数")
+        val sharedDeckName = args["deckName"]?.jsonPrimitive?.content
+        val sharedModelName = args["modelName"]?.jsonPrimitive?.content
+        val notesArray = args["notes"]?.jsonArray
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: notes")
         if (notesArray.isEmpty()) return pcBusinessError(BusinessErrorCodes.INVALID_ARGUMENT, "notes 不能为空")
         if (notesArray.size > 100) return pcBusinessError(BusinessErrorCodes.BATCH_TOO_LARGE, "一次最多添加 100 张笔记")
-        val sharedTags = arguments.stringList("tags")
+        val sharedTags = args.stringList("tags")
         return try {
-            val noteType = findNoteTypeByName(ankiRepository, modelName)
-            val noteIds = notesArray.map { element ->
+            val noteIds = notesArray.mapIndexed { index, element ->
                 val obj = element.jsonObject
+                val deckName = obj["deckName"]?.jsonPrimitive?.content ?: sharedDeckName
+                    ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: notes[$index].deckName")
+                if (deckName.isBlank()) {
+                    throw ToolErrorException(BusinessErrorCodes.DECK_NAME_EMPTY, "notes[$index].deckName 不能为空")
+                }
+                val modelName = obj["modelName"]?.jsonPrimitive?.content ?: sharedModelName
+                    ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: notes[$index].modelName")
+                val noteType = findNoteTypeByName(ankiRepository, modelName)
                 val fields = obj["fields"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content }
-                    ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "notes 每项都必须包含 fields")
-                val duplicateId = duplicateNoteIdOrNull(ankiRepository, noteType, fields, arguments)
+                    ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "notes[$index] 缺少参数: fields")
+                val duplicateOptions = mutableMapOf<String, JsonElement>()
+                duplicateOptions.putAll(args)
+                duplicateOptions.putAll(obj)
+                val duplicateId = duplicateNoteIdOrNull(ankiRepository, noteType, fields, JsonObject(duplicateOptions))
                 if (duplicateId != null) {
                     JsonNull
                 } else {
