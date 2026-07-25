@@ -32,8 +32,9 @@ import kotlinx.coroutines.withContext
  *    “初始化”异常仅在 [withAnkiRetry] 中重试一次（延迟 [INIT_RETRY_DELAY_MS]）；权限不足、
  *    AnkiDroid 未安装等错误**不重试**，直接上抛为业务异常。
  * 4. **卡片移组**：笔记插入后卡片默认进入“默认牌组”。单条路径直接拿到 noteId 后移动卡片；
- *    批量路径在 [Mutex] 保护下，取本次模型最新 [submitted] 张笔记（按 `_id DESC`）将其卡片
- *    移动到目标牌组，确保 `deck` 参数语义成立。
+ *    批量路径在 [Mutex] 保护下，**按 noteTypeId 分组**逐模型 `bulkInsert`，并仅移动各模型
+ *    **实际插入成功**的数量（按 `_id DESC`），确保 `deck` 参数语义成立且不会误移写入前的旧卡片。
+ *    [failed] 统一为 `requested - succeeded`（覆盖全部预校验失败的情况）。
  *
  * 不依赖任何额外 JAR；Authority 固定为 `com.ichi2.anki.flashcards`。
  */
@@ -168,7 +169,13 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                         0 -> "normal"
                         else -> "unknown"
                     }
-                    val cardTemplateCount = if (numCardsIdx >= 0) cursor.getInt(numCardsIdx) else fields.size
+                    // 无法读取 NUM_CARDS 时返回 0（表示“不可用/未知”），绝不用字段数代替模板数。
+                    val cardTemplateCount =
+                        if (numCardsIdx >= 0 && !cursor.isNull(numCardsIdx)) {
+                            cursor.getInt(numCardsIdx)
+                        } else {
+                            0
+                        }
                     result.add(AnkiNoteTypeSummary(id, name, fields, type, cardTemplateCount))
                 } catch (e: Exception) {
                     logRepoWarn("读取笔记类型失败，已跳过: ${e.message}")
@@ -267,18 +274,12 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
             logRepo.info("开始通用写入: noteTypeId=${request.noteTypeId}, deck=${request.deck}")
             val noteTypeId = request.noteTypeId
             if (noteTypeId <= 0) {
-                return@withContext AddGenericNoteResult(
-                    success = false, noteId = null, deck = request.deck.trim(),
-                    noteTypeId = noteTypeId, persisted = false, refreshNotified = false
-                ).also { logRepoWarn("noteTypeId 非法: $noteTypeId") }
+                throw ModelNotFoundException("笔记类型不存在或 noteTypeId 非法: $noteTypeId")
             }
 
             val deck = ensureDeck(request.deck)
             val orderedFields = getFieldList(noteTypeId)?.toList()
-                ?: return@withContext AddGenericNoteResult(
-                    success = false, noteId = null, deck = deck.name,
-                    noteTypeId = noteTypeId, persisted = false, refreshNotified = false
-                ).also { logRepoWarn("无法读取笔记类型字段: $noteTypeId") }
+                ?: throw ModelNotFoundException("笔记类型不存在或无法读取字段: $noteTypeId")
 
             // 字段映射：严格优先、忽略大小写、拒绝未知字段、至少一个非空。
             // 字段映射错误（未知字段 / 歧义 / 全空）直接抛出，由工具层转为带错误码的业务错误（isError=true）。
@@ -324,11 +325,9 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
             ensureAvailable()
             val deck = ensureDeck(request.deck)
 
-            // 1) 预校验 + 构造 ContentValues，记录原始下标与错误
-            val valuesList = mutableListOf<ContentValues>()
+            // 1) 预校验 + 构造按模型分组的写入计划，记录原始下标与错误
             val errors = mutableListOf<BatchError>()
-            // 记录每条通过的 (原始下标, noteTypeId, 字段数组, tags)，供后续回读验证
-            val plan = mutableListOf<GenericPlan>()
+            val validPlans = mutableListOf<GenericPlan>()
 
             request.notes.forEachIndexed { index, item ->
                 when {
@@ -337,7 +336,12 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                     else -> {
                         val orderedFields = getFieldList(item.noteTypeId)?.toList()
                         if (orderedFields == null) {
-                            errors.add(BatchError(index, AnkiErrors.NOTE_TYPE_NOT_FOUND, "第 ${index + 1} 项笔记类型字段读取失败"))
+                            errors.add(
+                                BatchError(
+                                    index, AnkiErrors.NOTE_TYPE_NOT_FOUND,
+                                    "第 ${index + 1} 项笔记类型不存在或无法读取字段（noteTypeId=${item.noteTypeId}）"
+                                )
+                            )
                             return@forEachIndexed
                         }
                         val fieldValues = try {
@@ -347,55 +351,65 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                             return@forEachIndexed
                         }
                         val tags = item.tags.map { it.trim() }.filter { it.isNotBlank() }.distinct()
-                        valuesList.add(buildGenericValues(item.noteTypeId, deck.id, fieldValues, tags))
-                        plan.add(GenericPlan(index, item.noteTypeId, fieldValues, tags))
+                        validPlans.add(GenericPlan(index, item.noteTypeId, fieldValues, tags))
                     }
                 }
             }
 
-            val submitted = valuesList.size
+            val requested = request.notes.size
+            val submitted = validPlans.size
+
+            // 全部预校验失败：没有任何条目进入插入流程，failed=requested（而非 errors.size 之外无其他约束）
             if (submitted == 0) {
                 return@withContext BatchAddGenericResult(
-                    requested = request.notes.size, submitted = 0, succeeded = 0,
-                    failed = errors.size, errors = errors, persisted = false, refreshNotified = false
+                    requested = requested, submitted = 0, succeeded = 0,
+                    failed = calculateBatchFailed(requested, 0),
+                    noteIds = emptyList(), noteIdsAvailable = false,
+                    errors = errors, persisted = false, refreshNotified = false
                 )
             }
 
-            // 2) 真批量插入（等价官方 AddContentApi.addNotes），单次 bulkInsert
-            val valuesArray = valuesList.toTypedArray()
-            addMutex.withLock {
-                val inserted = appContext.contentResolver.bulkInsert(
-                    FlashCardsContract.Note.CONTENT_URI, valuesArray
-                )
-                if (inserted < 0) {
-                    return@withLock BatchAddGenericResult(
-                        requested = request.notes.size, submitted = submitted, succeeded = 0,
-                        failed = request.notes.size, errors = errors + BatchError(
-                            -1, AnkiErrors.BATCH_FAILED, "批量插入失败（bulkInsert 返回 $inserted）"
-                        ), persisted = false, refreshNotified = false
+            // 2) 按 noteTypeId 分组，逐模型单独 bulkInsert（避免一次全局混合 bulkInsert 无法区分各模型成功数）
+            val groups: Map<Long, ModelBatchPlan<ContentValues>> = validPlans
+                .groupBy { it.noteTypeId }
+                .mapValues { (noteTypeId, plans) ->
+                    ModelBatchPlan(
+                        noteTypeId = noteTypeId,
+                        values = plans.map { buildGenericValues(it.noteTypeId, deck.id, it.fields, it.tags) },
+                        originalIndexes = plans.map { it.index }
                     )
                 }
 
-                // 3) 把本次插入的卡片移动到目标牌组（按模型分组，各取最新 inserted 张）
-                plan.groupBy { it.noteTypeId }.forEach { (mid, ps) ->
-                    moveRecentNotesToDeck(mid, ps.size, deck.id)
+            return@withContext addMutex.withLock {
+                // 逐模型批量插入（纯函数协调器，真实插入由 lambda 注入）
+                val summary = executeBatchInsert(groups) { _, values ->
+                    appContext.contentResolver.bulkInsert(
+                        FlashCardsContract.Note.CONTENT_URI, values.toTypedArray()
+                    )
                 }
 
-                // 4) 回读验证持久化（best-effort：检查各模型最近插入的笔记是否可读回）
-                val persisted = verifyRecentNotesPersisted(plan.groupBy { it.noteTypeId }.mapValues { it.value.size }, inserted)
+                // 3) 只移动各模型“实际插入成功”的数量（修正部分插入时误移写入前的旧卡片）
+                for ((noteTypeId, inserted) in summary.insertedByModel) {
+                    if (inserted > 0) moveRecentNotesToDeck(noteTypeId, inserted, deck.id)
+                }
+
+                // 4) 回读验证持久化（基于各模型实际插入数量，best-effort）
+                val persisted = verifyRecentNotesPersisted(summary.insertedByModel)
 
                 // 5) 本地刷新通知
                 val refreshNotified = notifyAnkiChanged()
 
-                val partial = if (inserted < submitted) {
-                    listOf(BatchError(-1, AnkiErrors.PARTIAL_FAILURE, "部分失败：submitted=$submitted, succeeded=$inserted"))
-                } else {
-                    emptyList()
-                }
-                return@withLock BatchAddGenericResult(
-                    requested = request.notes.size, submitted = submitted, succeeded = inserted,
-                    failed = submitted - inserted, noteIds = emptyList(), noteIdsAvailable = false,
-                    errors = errors + partial, persisted = persisted, refreshNotified = refreshNotified
+                val succeeded = summary.totalInserted
+                BatchAddGenericResult(
+                    requested = requested,
+                    submitted = submitted,
+                    succeeded = succeeded,
+                    failed = calculateBatchFailed(requested, succeeded),
+                    noteIds = emptyList(),
+                    noteIdsAvailable = false,
+                    errors = errors + summary.insertErrors,
+                    persisted = persisted,
+                    refreshNotified = refreshNotified
                 )
             }
         }
@@ -436,7 +450,11 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
      * 写入后回读验证：noteId 存在、MID 与请求一致、非空字段能与存储内容逐位匹配。
      * 最多重试 3 次（首次立即，之后间隔 150ms）。
      */
-    private fun verifyNotePersisted(noteId: Long, modelId: Long, fields: List<String>): Boolean {
+    /**
+     * 写入后回读验证：noteId 存在、MID 与请求一致、非空字段能与存储内容逐位匹配。
+     * 最多重试 3 次（首次立即，之后间隔 150ms）。挂起式等待，不阻塞线程。
+     */
+    private suspend fun verifyNotePersisted(noteId: Long, modelId: Long, fields: List<String>): Boolean {
         repeat(3) { attempt ->
             val uri = Uri.withAppendedPath(FlashCardsContract.Note.CONTENT_URI, noteId.toString())
             val ok = appContext.contentResolver.query(
@@ -454,33 +472,38 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                 true
             } ?: false
             if (ok) return true
-            if (attempt < 2) Thread.sleep(150)
+            // 挂起式等待（不阻塞线程），后两次间隔 150ms
+            if (attempt < 2) delay(150)
         }
         return false
     }
 
-    /** 批量路径的持久化验证（best-effort）：各模型最近插入的笔记是否可读回且 modelId 一致。 */
-    private fun verifyRecentNotesPersisted(countByModel: Map<Long, Int>, totalInserted: Int): Boolean {
-        if (totalInserted <= 0) return false
-        var allOk = true
-        countByModel.forEach { (modelId, count) ->
-            if (count <= 0) return@forEach
-            val selection = "${FlashCardsContract.Note.MID} = ?"
-            val selectionArgs = arrayOf(modelId.toString())
+    /**
+     * 批量路径的持久化验证（best-effort）：对每个实际插入的模型，查询 ContentProvider 能读回的
+     * 最新笔记数量是否 >= 该模型实际插入数量。不依赖“计划数量”或“全局总插入数”。
+     */
+    private fun verifyRecentNotesPersisted(insertedByModel: Map<Long, Int>): Boolean {
+        if (insertedByModel.isEmpty()) return false
+        val readCounts = mutableMapOf<Long, Int>()
+        for ((modelId, expectedCount) in insertedByModel) {
+            if (expectedCount <= 0) continue
             var found = 0
             appContext.contentResolver.query(
-                FlashCardsContract.Note.CONTENT_URI, arrayOf(FlashCardsContract.Note._ID, FlashCardsContract.Note.MID),
-                selection, selectionArgs, "${FlashCardsContract.Note._ID} DESC"
+                FlashCardsContract.Note.CONTENT_URI,
+                arrayOf(FlashCardsContract.Note._ID, FlashCardsContract.Note.MID),
+                "${FlashCardsContract.Note.MID} = ?",
+                arrayOf(modelId.toString()),
+                "${FlashCardsContract.Note._ID} DESC"
             )?.use { cursor ->
-                val idIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.Note._ID)
                 val midIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.Note.MID)
-                while (cursor.moveToNext() && found < count) {
+                while (cursor.moveToNext() && found < expectedCount) {
                     val mid = cursor.getLong(midIdx)
-                    if (mid == modelId) found++ else allOk = false
+                    if (mid == modelId) found++
                 }
-            } ?: run { allOk = false }
+            } ?: return false
+            readCounts[modelId] = found
         }
-        return allOk
+        return checkBatchPersisted(insertedByModel, readCounts)
     }
 
     /**
@@ -505,14 +528,6 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         // AnkiDroidRepository 没有直接的日志出口，复用 AppLogRepository 单例。
         AppLogRepository.instance.warn(message)
     }
-
-    private data class GenericPlan(
-        val index: Int,
-        val noteTypeId: Long,
-        val fields: List<String>,
-        val tags: List<String>
-    )
-
 
     private suspend fun doAddBasicNotes(request: AddBasicNotesRequest): BatchAddResult =
         withContext(Dispatchers.IO) {

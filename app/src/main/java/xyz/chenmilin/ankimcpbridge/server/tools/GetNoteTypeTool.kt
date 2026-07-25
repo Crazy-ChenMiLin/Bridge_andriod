@@ -60,7 +60,7 @@ class GetNoteTypeTool(private val ankiRepository: AnkiRepository) : McpTool {
         } catch (e: AnkiPermissionDeniedException) {
             businessError(BusinessErrorCodes.ANKI_PERMISSION_DENIED, e.message ?: "AnkiDroid 权限未授权")
         } catch (e: ModelNotFoundException) {
-            businessError(BusinessErrorCodes.MODEL_NOT_FOUND, e.message ?: "笔记类型未找到")
+            businessError(BusinessErrorCodes.NOTE_TYPE_NOT_FOUND, e.message ?: "笔记类型未找到")
         } catch (e: IllegalArgumentException) {
             businessError(BusinessErrorCodes.INVALID_ARGUMENT, e.message ?: "参数非法")
         } catch (e: Exception) {

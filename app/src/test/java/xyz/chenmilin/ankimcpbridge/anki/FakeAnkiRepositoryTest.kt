@@ -258,16 +258,35 @@ class FakeAnkiRepositoryTest {
     }
 
     @Test
-    fun `addNote rejects unknown noteTypeId`() = runTest {
-        val result = repo.addNote(
-            AddGenericNoteRequest(
-                deck = "Test",
-                noteTypeId = 888888L,
-                fields = mapOf("Front" to "Q", "Back" to "A")
+    fun `addNote rejects unknown noteTypeId with exception`() = runTest {
+        try {
+            repo.addNote(
+                AddGenericNoteRequest(
+                    deck = "Test",
+                    noteTypeId = 888888L,
+                    fields = mapOf("Front" to "Q", "Back" to "A")
+                )
             )
-        )
-        assertFalse(result.success)
-        assertFalse(result.persisted)
+            fail("Expected ModelNotFoundException")
+        } catch (e: ModelNotFoundException) {
+            // expected：未知 noteTypeId（非法 ID）统一抛 NOTE_TYPE_NOT_FOUND
+        }
+    }
+
+    @Test
+    fun `addNote rejects invalid noteTypeId with exception`() = runTest {
+        try {
+            repo.addNote(
+                AddGenericNoteRequest(
+                    deck = "Test",
+                    noteTypeId = 0L,
+                    fields = mapOf("Front" to "Q", "Back" to "A")
+                )
+            )
+            fail("Expected ModelNotFoundException")
+        } catch (e: ModelNotFoundException) {
+            // expected
+        }
     }
 
     @Test
@@ -326,5 +345,145 @@ class FakeAnkiRepositoryTest {
         assertEquals(0, result.failed)
         assertTrue(result.persisted)
         assertTrue(result.refreshNotified)
+    }
+
+    // ─── v0.2.1：cardTemplateCount / 批量统计 / 混合类型 / 持久化 ───
+
+    @Test
+    fun `cardTemplateCount is explicit not fields size`() = runTest {
+        val basic = repo.listNoteTypes().first { it.name == "Basic" }
+        // Basic 有 2 个字段，但模板数为 1（不再是字段数）
+        assertEquals(2, basic.fields.size)
+        assertEquals(1, basic.cardTemplateCount)
+        val cloze = repo.listNoteTypes().first { it.name == "Cloze" }
+        assertEquals(1, cloze.cardTemplateCount)
+    }
+
+    @Test
+    fun `forward reverse note type has 2 card templates`() = runTest {
+        val algo = repo.listNoteTypes().first { it.name == "MCP 算法题" }
+        // 6 个字段，正反向 = 2 模板（字段数 != 模板数）
+        assertEquals(6, algo.fields.size)
+        assertEquals(2, algo.cardTemplateCount)
+    }
+
+    @Test
+    fun `custom note type with 6 fields and 1 template returns 1`() = runTest {
+        repo.addCustomNoteType("SixFields", (1..6).map { "F$it" }, cardTemplateCount = 1)
+        val t = repo.listNoteTypes().first { it.name == "SixFields" }
+        assertEquals(6, t.fields.size)
+        assertEquals(1, t.cardTemplateCount)
+    }
+
+    @Test
+    fun `num cards unavailable returns 0 not fields size`() = runTest {
+        repo.setSimulateNumCardsUnavailable(true)
+        val types = repo.listNoteTypes()
+        assertTrue(types.isNotEmpty())
+        // 无法读取 NUM_CARDS 时统一返回 0
+        assertTrue(types.all { it.cardTemplateCount == 0 })
+    }
+
+    @Test
+    fun `addNotes partial insert planned 5 inserted 3`() = runTest {
+        val basic = repo.listNoteTypes().first { it.name == "Basic" }
+        repo.setSimulatePartialInsert(enabled = true, drop = 2)
+        val result = repo.addNotes(
+            AddGenericNotesRequest(
+                deck = "Test",
+                notes = (1..5).map { i ->
+                    GenericNoteItem(noteTypeId = basic.id, fields = mapOf("Front" to "Q$i", "Back" to "A$i"))
+                }
+            )
+        )
+        assertEquals(5, result.requested)
+        assertEquals(5, result.submitted)
+        assertEquals(3, result.succeeded) // 实际成功 3
+        assertEquals(2, result.failed) // failed = requested - succeeded = 2
+        assertTrue(result.errors.any { it.code == AnkiErrors.PARTIAL_FAILURE })
+        // 工具层判定：部分失败 → isError=true
+        assertTrue(shouldMarkBatchToolError(result))
+        // 只写入了 3 条
+        assertEquals(3, repo.noteCount())
+    }
+
+    @Test
+    fun `addNotes model insert failure does not block other model`() = runTest {
+        val basic = repo.listNoteTypes().first { it.name == "Basic" }
+        val custom = repo.addCustomNoteType("CustomA", listOf("X", "Y"))
+        repo.setSimulateModelInsertFailure(basic.id)
+        val result = repo.addNotes(
+            AddGenericNotesRequest(
+                deck = "Test",
+                notes = listOf(
+                    GenericNoteItem(noteTypeId = basic.id, fields = mapOf("Front" to "Q1", "Back" to "A1")),
+                    GenericNoteItem(noteTypeId = custom, fields = mapOf("X" to "x1", "Y" to "y1"))
+                )
+            )
+        )
+        assertEquals(2, result.requested)
+        assertEquals(1, result.succeeded) // 只有 custom 成功
+        assertEquals(1, result.failed)
+        assertTrue(result.errors.any { it.code == AnkiErrors.BATCH_FAILED })
+        // 仅 custom 的 1 条被写入
+        assertEquals(1, repo.noteCount())
+    }
+
+    @Test
+    fun `addNotes readback shortfall sets persisted false`() = runTest {
+        val basic = repo.listNoteTypes().first { it.name == "Basic" }
+        repo.setSimulateReadbackShortfall(true)
+        val result = repo.addNotes(
+            AddGenericNotesRequest(
+                deck = "Test",
+                notes = (1..3).map { i ->
+                    GenericNoteItem(noteTypeId = basic.id, fields = mapOf("Front" to "Q$i", "Back" to "A$i"))
+                }
+            )
+        )
+        assertEquals(3, result.succeeded)
+        assertFalse(result.persisted) // 回读不足
+        // 写入成功但持久化失败 → isError=true
+        assertTrue(shouldMarkBatchToolError(result))
+    }
+
+    @Test
+    fun `addNotes mixed noteTypeId batches separately`() = runTest {
+        val basic = repo.listNoteTypes().first { it.name == "Basic" }
+        val algo = repo.listNoteTypes().first { it.name == "MCP 算法题" }
+        val result = repo.addNotes(
+            AddGenericNotesRequest(
+                deck = "Test",
+                notes = listOf(
+                    GenericNoteItem(noteTypeId = basic.id, fields = mapOf("Front" to "Q1", "Back" to "A1")),
+                    GenericNoteItem(noteTypeId = algo.id, fields = mapOf("题目" to "两数之和", "核心思路" to "HashMap", "复杂度" to "O(n)", "Java代码" to "x", "易错点" to "y", "来源" to "z")),
+                    GenericNoteItem(noteTypeId = basic.id, fields = mapOf("Front" to "Q2", "Back" to "A2"))
+                )
+            )
+        )
+        assertEquals(3, result.requested)
+        assertEquals(3, result.submitted)
+        assertEquals(3, result.succeeded)
+        assertEquals(0, result.failed)
+        assertTrue(result.persisted)
+    }
+
+    @Test
+    fun `addNotes refresh failure only does not mark tool error`() = runTest {
+        val basic = repo.listNoteTypes().first { it.name == "Basic" }
+        repo.setSimulateRefreshFailure(true)
+        val result = repo.addNotes(
+            AddGenericNotesRequest(
+                deck = "Test",
+                notes = listOf(
+                    GenericNoteItem(noteTypeId = basic.id, fields = mapOf("Front" to "Q1", "Back" to "A1"))
+                )
+            )
+        )
+        assertEquals(1, result.succeeded)
+        assertTrue(result.persisted)
+        assertFalse(result.refreshNotified)
+        // 仅刷新失败（best-effort）→ 不判错
+        assertFalse(shouldMarkBatchToolError(result))
     }
 }

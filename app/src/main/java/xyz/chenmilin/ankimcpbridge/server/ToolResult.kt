@@ -48,7 +48,7 @@ data class McpInitializeResult(
     val serverInfo: JsonObject = JsonObject(
         mapOf(
             "name" to JsonPrimitive("ankidroid-mcp-bridge"),
-            "version" to JsonPrimitive("0.2.0")
+            "version" to JsonPrimitive("0.2.1")
         )
     )
 )

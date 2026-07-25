@@ -148,6 +148,21 @@ data class AddGenericNotesRequest(
 )
 
 /**
+ * 批量写入中通过预校验的单条计划，真实实现与 Fake 实现共享。
+ *
+ * @param index 原始请求下标（0-based），用于错误映射与日志
+ * @param noteTypeId 笔记类型 ID
+ * @param fields 已按笔记类型字段顺序排列的字段值
+ * @param tags 去空去重后的标签
+ */
+internal data class GenericPlan(
+    val index: Int,
+    val noteTypeId: Long,
+    val fields: List<String>,
+    val tags: List<String>
+)
+
+/**
  * 批量通用写入结果。字段语义对齐 [BatchAddResult]：
  * - [requested]/[submitted]/[succeeded]/[failed]：请求/通过预校验/插入成功/失败数；
  * - [noteIds]/[noteIdsAvailable]：批量插入不返回单个 noteId，故恒空、恒 false；

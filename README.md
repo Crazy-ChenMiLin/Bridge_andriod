@@ -56,6 +56,28 @@ AnkiDroid ContentProvider
 (com.ichi2.anki.flashcards)
 ```
 
+## 更新日志
+
+### v0.2.1 — 通用批量写入稳定性修复
+
+修复 v0.2.0 通用批量写入（`add_notes`）中的结果统计、混合笔记类型处理、持久化误判与错误返回问题：
+
+- **`failed` 统一定义**：`failed = requested - succeeded`（不再用 `submitted - inserted`）。这样能正确覆盖“全部在预校验阶段失败”的情况（`submitted=0` 但 `failed=requested`）。
+- **混合 `noteTypeId` 按模型分组**：`add_notes` 现在先按 `noteTypeId` 分组，再逐个模型单独 `bulkInsert`，并把卡片**只移动到各模型实际插入成功的数量**（修正了“部分插入时误移写入前旧卡片”的问题）。
+- **批量持久化验证修正**：回读验证改为按模型检查“实际读回数量 ≥ 实际插入数量”，不再依赖全局总插入数或计划数（best-effort）。
+- **`isError` 判定统一**：`failed > 0` / 存在任意错误（含预校验）/ 写入成功但持久化失败 → `isError=true`；**仅 `refreshNotified=false`（本地刷新是 best-effort）不单独判错**。
+- **`cardTemplateCount` 不再误用字段数**：无法读取 `NUM_CARDS` 时返回 `0`（表示“不可用/未知”），详细信息由 `get_note_type` 获取。
+- **未知 `noteTypeId` 明确报错**：`add_note` / `get_note_type` 查不到类型时统一返回业务错误 `NOTE_TYPE_NOT_FOUND`（不再静默返回 `success=false`）。
+- 真实实现与 Fake 测试实现共用同一组纯函数（`calculateBatchFailed` / `executeBatchInsert` / `checkBatchPersisted` / `shouldMarkBatchToolError`），避免“测试通过但真实逻辑仍错”的语义漂移。
+
+> 边界保持不变：`refreshNotified` 不是 AnkiWeb 云同步；批量 `bulkInsert` 不返回单个 noteId；批量持久化验证属于 best-effort 验证，不声称逐条 noteId 精确验证。
+
+### v0.2.0 — 通用笔记类型与写入闭环
+
+- 新增 9 个 MCP 工具中的 4 个通用工具：`list_note_types` / `get_note_type` / `add_note` / `add_notes`；
+- 任意笔记类型字段映射、单张回读验证、`notifyChange` 本地刷新；
+- 旧 `add_basic_note` / `add_basic_notes` 保留并复用通用写入链路。
+
 ## 安装
 
 ### 1. 安装 AnkiDroid
@@ -74,7 +96,7 @@ AnkiDroid ContentProvider
 | Android 系统 | 8.0（API 26）及以上 |
 | MCP 客户端 | 支持 Streamable HTTP（如 RakaHub），与本机同进程/同设备 |
 | 传输 | 仅 `http://127.0.0.1`（localhost），不支持 `https`、不支持 `0.0.0.0` |
-| 最低应用版本 | v0.2.0 |
+| 最低应用版本 | v0.2.1 |
 
 ### 2. 安装本 APK
 
@@ -195,7 +217,7 @@ AnkiDroid ContentProvider
 
 ## 关于「同步」的边界
 
-本应用 v0.2.0 的写入闭环包含两步：
+本应用 v0.2.1 的写入闭环包含两步：
 
 1. **确认数据已保存**：写入后通过 ContentProvider 回读验证（`persisted`）；
 2. **本地刷新通知**：通过 `ContentResolver.notifyChange` 通知 AnkiDroid 数据变化。
@@ -246,9 +268,10 @@ AnkiWeb 云同步仍由 **AnkiDroid 自身的自动同步或手动同步**负责
   "errors": [ { "index": 1, "code": "INVALID_FRONT", "message": "..." } ] }
 ```
 
-- `submitted`：通过预校验、真正交给批量插入的卡片数。
-- `failed`：失败数（含预校验未通过与批量写入未成功的部分）；`failed > 0` 时工具结果 `isError=true`。
-- `errors[].index`：对应**原始请求下标**，便于定位是哪张卡片失败。
+- `submitted`：通过预校验、真正交给批量插入的卡片数（按 `noteTypeId` 分组后逐模型插入）。
+- `failed`：失败数，`failed = requested - succeeded`（含预校验未通过与各模型插入未成功的部分）。
+- `isError`：当 `failed > 0`、存在任意错误（含预校验错误）、或写入成功但持久化验证失败时为 `true`；仅 `refreshNotified=false` 不会单独判错。
+- `errors[].index`：对应**原始请求下标**的失败项便于定位；模型级插入错误（整组失败 / 部分失败）使用 `index = -1`。
 
 ## 权限模型
 

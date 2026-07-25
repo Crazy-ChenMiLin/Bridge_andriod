@@ -224,6 +224,6 @@ class McpProtocolHandler(
 
     companion object {
         const val SUPPORTED_PROTOCOL_VERSION = "2024-11-05"
-        const val SERVER_VERSION = "0.2.0"
+        const val SERVER_VERSION = "0.2.1"
     }
 }

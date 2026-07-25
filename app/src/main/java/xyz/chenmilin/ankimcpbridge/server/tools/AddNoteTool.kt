@@ -87,7 +87,7 @@ class AddNoteTool(private val ankiRepository: AnkiRepository) : McpTool {
         } catch (e: AnkiPermissionDeniedException) {
             businessError(BusinessErrorCodes.ANKI_PERMISSION_DENIED, e.message ?: "AnkiDroid 权限未授权")
         } catch (e: ModelNotFoundException) {
-            businessError(BusinessErrorCodes.MODEL_NOT_FOUND, e.message ?: "笔记类型未找到")
+            businessError(BusinessErrorCodes.NOTE_TYPE_NOT_FOUND, e.message ?: "笔记类型未找到")
         } catch (e: FieldMappingException) {
             businessError(e.code, e.message ?: "字段映射失败")
         } catch (e: AddNoteException) {

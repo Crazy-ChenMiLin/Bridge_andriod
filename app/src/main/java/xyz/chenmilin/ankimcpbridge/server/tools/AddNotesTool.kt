@@ -91,9 +91,11 @@ class AddNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
                     })
                 )
             )
+            // isError 统一判定：失败数 >0 / 存在错误（含预校验）/ 写入成功但持久化失败。
+            // 仅 refreshNotified=false 不单独判错（刷新是 best-effort，不影响数据写入成功）。
             McpToolCallResult(
                 content = listOf(McpToolContent(text = json.toString())),
-                isError = result.failed > 0
+                isError = shouldMarkBatchToolError(result)
             )
         } catch (e: AnkiDroidNotInstalledException) {
             businessError(BusinessErrorCodes.ANKIDROID_NOT_INSTALLED, e.message ?: "AnkiDroid 未安装")
@@ -102,7 +104,7 @@ class AddNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
         } catch (e: FieldMappingException) {
             businessError(e.code, e.message ?: "字段映射失败")
         } catch (e: ModelNotFoundException) {
-            businessError(BusinessErrorCodes.MODEL_NOT_FOUND, e.message ?: "笔记类型未找到")
+            businessError(BusinessErrorCodes.NOTE_TYPE_NOT_FOUND, e.message ?: "笔记类型未找到")
         } catch (e: Exception) {
             businessError(BusinessErrorCodes.INTERNAL_ERROR, e.message ?: "内部错误")
         }

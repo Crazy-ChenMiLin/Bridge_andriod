@@ -35,7 +35,7 @@ class McpProtocolTest {
         val result = response.result!!.jsonObject
         assertEquals("2024-11-05", result["protocolVersion"]?.jsonPrimitive?.content)
         assertEquals("ankidroid-mcp-bridge", result["serverInfo"]?.jsonObject?.get("name")?.jsonPrimitive?.content)
-        assertEquals("0.2.0", result["serverInfo"]?.jsonObject?.get("version")?.jsonPrimitive?.content)
+        assertEquals("0.2.1", result["serverInfo"]?.jsonObject?.get("version")?.jsonPrimitive?.content)
     }
 
     @Test
@@ -590,6 +590,152 @@ class McpProtocolTest {
         ).jsonObject
         assertTrue(addJson["success"]!!.jsonPrimitive.boolean)
         assertTrue(addJson["persisted"]!!.jsonPrimitive.boolean)
+    }
+
+    // ─── v0.2.1：错误码统一为 NOTE_TYPE_NOT_FOUND / 批量 isError 语义 ───
+
+    @Test
+    fun `tools call add_note unknown noteTypeId returns NOTE_TYPE_NOT_FOUND`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+
+        val request = buildRequest("tools/call", mapOf(
+            "name" to "add_note",
+            "arguments" to mapOf(
+                "deck" to "MCP Test",
+                "noteTypeId" to 888888L,
+                "fields" to mapOf("Front" to "Q", "Back" to "A")
+            )
+        ))
+        val response = parseResponse(handler.handleRequest(request))
+        assertNull(response.error)
+        assertTrue(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val errJson = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals(BusinessErrorCodes.NOTE_TYPE_NOT_FOUND, errJson["code"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `tools call get_note_type unknown id returns NOTE_TYPE_NOT_FOUND`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+
+        val request = buildRequest("tools/call", mapOf(
+            "name" to "get_note_type",
+            "arguments" to mapOf("noteTypeId" to 888888L)
+        ))
+        val response = parseResponse(handler.handleRequest(request))
+        assertNull(response.error)
+        assertTrue(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val errJson = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals(BusinessErrorCodes.NOTE_TYPE_NOT_FOUND, errJson["code"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `tools call add_notes mixed noteTypeId counts correctly`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+
+        val listJson = Json.parseToJsonElement(
+            parseResponse(handler.handleRequest(buildRequest("tools/call", mapOf("name" to "list_note_types"))))
+                .result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        val basicId = listJson["noteTypes"]!!.jsonArray.first {
+            it.jsonObject["name"]!!.jsonPrimitive.content == "Basic"
+        }.jsonObject["id"]!!.jsonPrimitive.long
+        val algoId = listJson["noteTypes"]!!.jsonArray.first {
+            it.jsonObject["name"]!!.jsonPrimitive.content == "MCP 算法题"
+        }.jsonObject["id"]!!.jsonPrimitive.long
+
+        val notes = listOf(
+            mapOf("noteTypeId" to basicId, "fields" to mapOf("Front" to "Q1", "Back" to "A1")),
+            mapOf("noteTypeId" to algoId, "fields" to mapOf("题目" to "两数之和", "核心思路" to "HashMap", "复杂度" to "O(n)", "Java代码" to "x", "易错点" to "y", "来源" to "z")),
+            mapOf("noteTypeId" to basicId, "fields" to mapOf("Front" to "Q2", "Back" to "A2"))
+        )
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf("name" to "add_notes", "arguments" to mapOf("deck" to "MCP Test", "notes" to notes)))
+        ))
+        assertNull(response.error)
+        assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val batch = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals(3, batch["requested"]!!.jsonPrimitive.int)
+        assertEquals(3, batch["succeeded"]!!.jsonPrimitive.int)
+        assertEquals(0, batch["failed"]!!.jsonPrimitive.int)
+    }
+
+    @Test
+    fun `tools call add_notes persisted failure marks isError`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        ankiRepo.setSimulateReadbackShortfall(true)
+
+        val listJson = Json.parseToJsonElement(
+            parseResponse(handler.handleRequest(buildRequest("tools/call", mapOf("name" to "list_note_types"))))
+                .result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        val basicId = listJson["noteTypes"]!!.jsonArray.first {
+            it.jsonObject["name"]!!.jsonPrimitive.content == "Basic"
+        }.jsonObject["id"]!!.jsonPrimitive.long
+
+        val notes = listOf(
+            mapOf("noteTypeId" to basicId, "fields" to mapOf("Front" to "Q1", "Back" to "A1"))
+        )
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf("name" to "add_notes", "arguments" to mapOf("deck" to "MCP Test", "notes" to notes)))
+        ))
+        assertNull(response.error)
+        // 写入成功但持久化失败 → isError=true
+        assertTrue(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val batch = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertTrue(batch["succeeded"]!!.jsonPrimitive.int > 0)
+        assertFalse(batch["persisted"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `tools call add_notes refresh failure only does not mark isError`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        ankiRepo.setSimulateRefreshFailure(true)
+
+        val listJson = Json.parseToJsonElement(
+            parseResponse(handler.handleRequest(buildRequest("tools/call", mapOf("name" to "list_note_types"))))
+                .result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        val basicId = listJson["noteTypes"]!!.jsonArray.first {
+            it.jsonObject["name"]!!.jsonPrimitive.content == "Basic"
+        }.jsonObject["id"]!!.jsonPrimitive.long
+
+        val notes = listOf(
+            mapOf("noteTypeId" to basicId, "fields" to mapOf("Front" to "Q1", "Back" to "A1"))
+        )
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf("name" to "add_notes", "arguments" to mapOf("deck" to "MCP Test", "notes" to notes)))
+        ))
+        assertNull(response.error)
+        // 仅刷新失败（best-effort）→ 不判错
+        assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val batch = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertTrue(batch["succeeded"]!!.jsonPrimitive.int > 0)
+        assertFalse(batch["refreshNotified"]!!.jsonPrimitive.boolean)
     }
 
     // ─── 辅助方法 ───
