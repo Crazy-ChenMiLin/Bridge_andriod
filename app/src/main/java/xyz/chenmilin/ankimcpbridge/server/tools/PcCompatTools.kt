@@ -504,6 +504,34 @@ class PcFindNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
     }
 }
 
+class PcFindCardsTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "findCards",
+        description = "AnkiConnect compatible alias: search cards by Anki browser query where AnkiDroid can search notes.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(mapOf("query" to JsonObject(mapOf("type" to JsonPrimitive("string"))))),
+                "required" to JsonArray(listOf(JsonPrimitive("query")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val query = arguments?.get("query")?.jsonPrimitive?.content
+            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: query")
+        return try {
+            val noteIds = ankiRepository.findNotes(query).toSet()
+            val cards = ankiRepository.getCards(limit = Int.MAX_VALUE)
+                .filter { it.noteId in noteIds }
+                .map { JsonPrimitive(it.id) }
+            McpToolCallResult(listOf(McpToolContent(text = JsonArray(cards).toString())))
+        } catch (e: Exception) {
+            pcExceptionError(e)
+        }
+    }
+}
+
 class PcNotesInfoTool(private val ankiRepository: AnkiRepository) : McpTool {
     override val definition = McpToolDef(
         name = "notesInfo",
@@ -546,6 +574,56 @@ class PcNotesInfoTool(private val ankiRepository: AnkiRepository) : McpTool {
                 )
             })
             McpToolCallResult(listOf(McpToolContent(text = json.toString())))
+        } catch (e: Exception) {
+            pcExceptionError(e)
+        }
+    }
+}
+
+class PcCardsInfoTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "cardsInfo",
+        description = "AnkiConnect compatible alias: return card info for card ids that AnkiDroid can read.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(mapOf("cards" to JsonObject(mapOf("type" to JsonPrimitive("array"))))),
+                "required" to JsonArray(listOf(JsonPrimitive("cards")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val cardIds = arguments?.get("cards")?.jsonArray?.mapNotNull { it.jsonPrimitive.content.toLongOrNull() }
+            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: cards")
+        return try {
+            val cards = cardIds.mapNotNull { ankiRepository.presentCard(it) }
+            McpToolCallResult(listOf(McpToolContent(text = JsonArray(cards.map { cardToJson(it) }).toString())))
+        } catch (e: Exception) {
+            pcExceptionError(e)
+        }
+    }
+}
+
+class PcCardsToNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "cardsToNotes",
+        description = "AnkiConnect compatible alias: map card ids to their note ids.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(mapOf("cards" to JsonObject(mapOf("type" to JsonPrimitive("array"))))),
+                "required" to JsonArray(listOf(JsonPrimitive("cards")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val cardIds = arguments?.get("cards")?.jsonArray?.mapNotNull { it.jsonPrimitive.content.toLongOrNull() }
+            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: cards")
+        return try {
+            val noteIds = cardIds.mapNotNull { ankiRepository.presentCard(it)?.noteId }
+            McpToolCallResult(listOf(McpToolContent(text = JsonArray(noteIds.map { JsonPrimitive(it) }).toString())))
         } catch (e: Exception) {
             pcExceptionError(e)
         }

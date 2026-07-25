@@ -110,7 +110,8 @@ class McpProtocolTest {
             listOf(
                 "listDecks", "deckNames", "deckNamesAndIds", "createDeck",
                 "modelNames", "modelNamesAndIds", "modelFieldNames", "addNote", "addNotes",
-                "findNotes", "notesInfo", "updateNoteFields", "getTags", "addTags", "removeTags",
+                "findNotes", "findCards", "notesInfo", "cardsInfo", "cardsToNotes",
+                "updateNoteFields", "getTags", "addTags", "removeTags",
                 "replaceTags", "modelTemplates", "modelStyling",
                 "get_cards", "get_due_cards", "present_card", "changeDeck", "rate_card",
                 "deckStats", "collection_stats"
@@ -668,6 +669,39 @@ class McpProtocolTest {
             cards.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
         ).jsonArray
         assertTrue(cardList.any { it.jsonObject["cardId"]!!.jsonPrimitive.long == cardId })
+
+        val foundCards = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "findCards",
+                "arguments" to mapOf("query" to "Card front")
+            ))
+        ))
+        val foundCardIds = Json.parseToJsonElement(
+            foundCards.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray.map { it.jsonPrimitive.long }
+        assertTrue(foundCardIds.contains(cardId))
+
+        val cardInfo = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "cardsInfo",
+                "arguments" to mapOf("cards" to listOf(cardId))
+            ))
+        ))
+        val cardInfoList = Json.parseToJsonElement(
+            cardInfo.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray
+        assertEquals(noteId, cardInfoList[0].jsonObject["noteId"]!!.jsonPrimitive.long)
+
+        val cardsToNotes = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "cardsToNotes",
+                "arguments" to mapOf("cards" to listOf(cardId))
+            ))
+        ))
+        val mappedNoteIds = Json.parseToJsonElement(
+            cardsToNotes.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray.map { it.jsonPrimitive.long }
+        assertEquals(listOf(noteId), mappedNoteIds)
 
         val presentQuestion = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(
