@@ -199,6 +199,37 @@ class PcListDecksTool(private val ankiRepository: AnkiRepository) : McpTool {
     }
 }
 
+class PcDeckNamesTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "deckNames",
+        description = "AnkiConnect compatible alias: return AnkiDroid deck names as a JSON array.",
+        inputSchema = emptySchema()
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult = try {
+        val names = ankiRepository.listDecks().map { it.name }
+        McpToolCallResult(listOf(McpToolContent(text = stringArray(names).toString())))
+    } catch (e: Exception) {
+        pcExceptionError(e)
+    }
+}
+
+class PcDeckNamesAndIdsTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "deckNamesAndIds",
+        description = "AnkiConnect compatible alias: return deck name to deck id mapping.",
+        inputSchema = emptySchema()
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult = try {
+        val decks = ankiRepository.listDecks()
+        val json = JsonObject(decks.associate { it.name to JsonPrimitive(it.id) })
+        McpToolCallResult(listOf(McpToolContent(text = json.toString())))
+    } catch (e: Exception) {
+        pcExceptionError(e)
+    }
+}
+
 class PcCreateDeckTool(private val ankiRepository: AnkiRepository) : McpTool {
     override val definition = McpToolDef(
         name = "createDeck",
@@ -247,6 +278,22 @@ class PcModelNamesTool(private val ankiRepository: AnkiRepository) : McpTool {
     override suspend fun call(arguments: JsonObject?): McpToolCallResult = try {
         val names = ankiRepository.listNoteTypes().map { it.name }
         McpToolCallResult(listOf(McpToolContent(text = stringArray(names).toString())))
+    } catch (e: Exception) {
+        pcExceptionError(e)
+    }
+}
+
+class PcModelNamesAndIdsTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "modelNamesAndIds",
+        description = "AnkiConnect compatible alias: return note type name to model id mapping.",
+        inputSchema = emptySchema()
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult = try {
+        val models = ankiRepository.listNoteTypes()
+        val json = JsonObject(models.associate { it.name to JsonPrimitive(it.id) })
+        McpToolCallResult(listOf(McpToolContent(text = json.toString())))
     } catch (e: Exception) {
         pcExceptionError(e)
     }

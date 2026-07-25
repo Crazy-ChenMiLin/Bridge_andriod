@@ -47,8 +47,11 @@ class McpProtocolHandler(
 
     private fun registerPcCompatibleTools() {
         toolRegistry.register(PcListDecksTool(ankiRepository))
+        toolRegistry.register(PcDeckNamesTool(ankiRepository))
+        toolRegistry.register(PcDeckNamesAndIdsTool(ankiRepository))
         toolRegistry.register(PcCreateDeckTool(ankiRepository))
         toolRegistry.register(PcModelNamesTool(ankiRepository))
+        toolRegistry.register(PcModelNamesAndIdsTool(ankiRepository))
         toolRegistry.register(PcModelFieldNamesTool(ankiRepository))
         toolRegistry.register(PcAddNoteTool(ankiRepository))
         toolRegistry.register(PcAddNotesTool(ankiRepository))

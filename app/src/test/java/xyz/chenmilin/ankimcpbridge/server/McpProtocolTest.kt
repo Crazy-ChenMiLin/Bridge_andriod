@@ -108,7 +108,8 @@ class McpProtocolTest {
 
         assertTrue(toolNames.containsAll(
             listOf(
-                "listDecks", "createDeck", "modelNames", "modelFieldNames", "addNote", "addNotes",
+                "listDecks", "deckNames", "deckNamesAndIds", "createDeck",
+                "modelNames", "modelNamesAndIds", "modelFieldNames", "addNote", "addNotes",
                 "findNotes", "notesInfo", "updateNoteFields", "getTags", "addTags", "removeTags",
                 "replaceTags", "modelTemplates", "modelStyling",
                 "get_cards", "get_due_cards", "present_card", "changeDeck", "rate_card",
@@ -310,6 +311,36 @@ class McpProtocolTest {
             ))
         ))
         assertFalse(styling.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `pc compatible deck and model id aliases return AnkiConnect shapes`() = runTest {
+        ankiRepo.ensureDeck("PC Id Deck")
+
+        val deckNames = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf("name" to "deckNames"))
+        ))
+        assertNull(deckNames.error)
+        val names = Json.parseToJsonElement(
+            deckNames.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray.map { it.jsonPrimitive.content }
+        assertTrue(names.contains("PC Id Deck"))
+
+        val deckIds = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf("name" to "deckNamesAndIds"))
+        ))
+        val deckMap = Json.parseToJsonElement(
+            deckIds.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertTrue(deckMap["PC Id Deck"]!!.jsonPrimitive.long > 0)
+
+        val modelIds = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf("name" to "modelNamesAndIds"))
+        ))
+        val modelMap = Json.parseToJsonElement(
+            modelIds.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertTrue(modelMap["Basic"]!!.jsonPrimitive.long > 0)
     }
 
     @Test
