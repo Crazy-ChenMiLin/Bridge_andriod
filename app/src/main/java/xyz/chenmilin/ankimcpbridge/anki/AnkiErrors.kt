@@ -16,6 +16,8 @@ object AnkiErrors {
 
     // ── v0.2.0 通用笔记类型 ──
     const val NOTE_TYPE_NOT_FOUND = "NOTE_TYPE_NOT_FOUND"
+    /** 牌组名称为空（或不含可见字符），写入前必须显式提供。对应工具层 [DECK_NAME_EMPTY]。 */
+    const val DECK_NAME_EMPTY = "DECK_NAME_EMPTY"
     const val FIELD_NOT_FOUND = "FIELD_NOT_FOUND"
     const val NO_VALID_FIELD = "NO_VALID_FIELD"
     const val AMBIGUOUS_FIELD = "AMBIGUOUS_FIELD"

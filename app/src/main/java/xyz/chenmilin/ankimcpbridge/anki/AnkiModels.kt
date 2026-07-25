@@ -2,7 +2,9 @@ package xyz.chenmilin.ankimcpbridge.anki
 
 data class AnkiDeck(
     val id: Long,
-    val name: String
+    val name: String,
+    /** 本次调用是否实际创建了该牌组（true=新建，false=复用已有）。 */
+    val created: Boolean = false
 )
 
 data class AddBasicNoteRequest(
@@ -124,6 +126,8 @@ data class AddGenericNoteRequest(
  *
  * @param persisted 写入后回读验证是否成功（数据已落库可读回）
  * @param refreshNotified 是否已发送本地数据变更通知（[android.content.ContentResolver.notifyChange]）
+ * @param deckId 本次写入实际使用的牌组 ID（由 [ensureDeck] 返回）
+ * @param deckCreated 该牌组是否为本次写入**新创建**（true=新建，false=复用已有）
  */
 data class AddGenericNoteResult(
     val success: Boolean,
@@ -131,7 +135,9 @@ data class AddGenericNoteResult(
     val deck: String,
     val noteTypeId: Long,
     val persisted: Boolean,
-    val refreshNotified: Boolean
+    val refreshNotified: Boolean,
+    val deckId: Long = 0L,
+    val deckCreated: Boolean = false
 )
 
 /** 批量通用写入中的单条请求项（每项可指定自己的笔记类型）。 */
@@ -168,7 +174,9 @@ internal data class GenericPlan(
  * - [noteIds]/[noteIdsAvailable]：批量插入不返回单个 noteId，故恒空、恒 false；
  * - [errors]：每条失败带**原始下标**与原因；
  * - [persisted]：是否对成功插入的笔记完成回读验证；
- * - [refreshNotified]：是否已发送本地数据变更通知。
+ * - [refreshNotified]：是否已发送本地数据变更通知；
+ * - [deckId]：本次写入实际使用的牌组 ID（由 [ensureDeck] 返回）；
+ * - [deckCreated]：该牌组是否为本次写入**新创建**（true=新建，false=复用已有）。
  */
 data class BatchAddGenericResult(
     val requested: Int,
@@ -179,7 +187,9 @@ data class BatchAddGenericResult(
     val noteIdsAvailable: Boolean = false,
     val errors: List<BatchError>,
     val persisted: Boolean = false,
-    val refreshNotified: Boolean = false
+    val refreshNotified: Boolean = false,
+    val deckId: Long = 0L,
+    val deckCreated: Boolean = false
 )
 
 /**

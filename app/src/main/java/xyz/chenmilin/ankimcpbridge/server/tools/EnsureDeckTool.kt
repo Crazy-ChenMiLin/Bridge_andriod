@@ -8,7 +8,7 @@ class EnsureDeckTool(private val ankiRepository: AnkiRepository) : McpTool {
 
     override val definition = McpToolDef(
         name = "ensure_deck",
-        description = "确保指定牌组存在。如果不存在则创建，已存在则返回已有牌组。",
+        description = "确保指定牌组存在。如果不存在则创建，已存在则返回已有牌组。注意：本工具不会为后续 add_note/add_notes 调用设置“当前牌组”状态（MCP 工具无状态），写入时仍需在每个工具调用的 deck 参数里显式给出牌组名。实际上 add_note/add_notes/add_basic_note/add_basic_notes 都会自动确保牌组存在，多数情况下可直接写入、省略 ensure_deck。",
         inputSchema = JsonObject(
             mapOf(
                 "type" to JsonPrimitive("object"),

@@ -58,6 +58,18 @@ AnkiDroid ContentProvider
 
 ## 更新日志
 
+### v0.2.2 — 修复 Agent 写入时牌组参数为空的问题
+
+修复 Agent 在写入时把 `deck` 传空的典型场景（先调 `ensure_deck`，再调 `add_notes` 时沿用空 deck，误以为会“继承”当前牌组）。MCP 工具本身无状态，`ensure_deck` 不会为后续调用保留“当前牌组”：
+
+- **空 deck 明确报错**：`add_note` / `add_notes` / `add_basic_note` / `add_basic_notes` 读取 `deck` 后 `trim()`，若为空（或只含空白字符）立即返回业务错误 `DECK_NAME_EMPTY`（之前会误落到 `INTERNAL_ERROR` 或 `INVALID_NOTE_TYPE_ID`）。
+- **JSON Schema 强化**：4 个写入工具的 `deck` 参数均增加 `minLength: 1`，客户端可在发请求前校验。
+- **工具描述澄清无状态语义**：`add_note` / `add_notes` / `ensure_deck` 的描述明确“每次写入都必须在参数里显式给出 deck”“推荐流程：list_note_types → get_note_type → add_note/add_notes”，`add_*` 会自动确保牌组存在，多数情况无需先调 `ensure_deck`。
+- **返回结果新增牌组信息**：`add_note` / `add_notes` 的返回新增 `deckId` 与 `deckCreated`（true=本次新建牌组，false=复用已有），便于 Agent 确认落点。
+- **诊断日志**：4 个写入路径增加“请求参数摘要”日志（仅含 deck 名、noteTypeId、笔记数量，**不含字段内容 / 标签 / Token**）。
+
+> 边界保持不变：`DECK_NAME_EMPTY` 是业务错误（`isError=true`），不改变“牌组会自动创建”的语义——只要在参数里给出非空 `deck`，写入仍会自动建组；本地刷新通知仍非 AnkiWeb 云同步。
+
 ### v0.2.1 — 通用批量写入稳定性修复
 
 修复 v0.2.0 通用批量写入（`add_notes`）中的结果统计、混合笔记类型处理、持久化误判与错误返回问题：
@@ -96,7 +108,7 @@ AnkiDroid ContentProvider
 | Android 系统 | 8.0（API 26）及以上 |
 | MCP 客户端 | 支持 Streamable HTTP（如 RakaHub），与本机同进程/同设备 |
 | 传输 | 仅 `http://127.0.0.1`（localhost），不支持 `https`、不支持 `0.0.0.0` |
-| 最低应用版本 | v0.2.1 |
+| 最低应用版本 | v0.2.2 |
 
 ### 2. 安装本 APK
 
@@ -177,8 +189,8 @@ AnkiDroid ContentProvider
 | `add_basic_notes` | 批量添加 Basic 卡片（最多 100 张），返回 `requested/submitted/succeeded/failed`；批量路径下 `noteIdsAvailable=false`（不返回单个 noteId） |
 | `list_note_types` | 列出本机全部笔记类型（Note Type / Model），含 ID、名称、有序字段、类型（normal/cloze/unknown）与卡片模板数量 |
 | `get_note_type` | 获取指定 `noteTypeId` 的完整详情：有序字段、类型、CSS（可能为空）、卡片模板（正面/背面，可能为空列表） |
-| `add_note` | 按指定 `noteTypeId` 写入一张**任意字段**笔记；字段名需与 `list_note_types`/`get_note_type` 一致；未知字段/全空会被拒绝；写入后回读验证持久化并通知 AnkiDroid 本地刷新 |
-| `add_notes` | 批量按任意笔记类型写入多张笔记（最多 100 张），每条可独立指定 `noteTypeId`/`fields`/`tags`；共享同一 `deck`；返回 `requested/submitted/succeeded/failed/errors` 及 `persisted`/`refreshNotified` |
+| `add_note` | 按指定 `noteTypeId` 写入一张**任意字段**笔记；`deck` 不可为空（空值返回 `DECK_NAME_EMPTY`），不存在时自动创建；字段名需与 `list_note_types`/`get_note_type` 一致；未知字段/全空会被拒绝；写入后回读验证持久化并通知 AnkiDroid 本地刷新；返回含 `deckId`/`deckCreated` |
+| `add_notes` | 批量按任意笔记类型写入多张笔记（最多 100 张），每条可独立指定 `noteTypeId`/`fields`/`tags`；共享同一 `deck`（`deck` 为空返回 `DECK_NAME_EMPTY`，非空则自动创建）；返回 `requested/submitted/succeeded/failed/errors`、`persisted`/`refreshNotified` 及 `deckId`/`deckCreated` |
 
 > **旧工具保留**：`add_basic_note` / `add_basic_notes` 继续可用，内部已复用通用写入链路（写入 / 卡片移组 / 回读验证 / 刷新通知）。
 
@@ -191,6 +203,9 @@ AnkiDroid ContentProvider
 | `persisted` | 写入后回读验证是否成功（数据已落库可读回）。`persisted=false` 表示写入未通过验证 |
 | `refreshNotified` | 是否已发送本地数据变更通知（`ContentResolver.notifyChange`）。**不代表 AnkiWeb 云同步** |
 | `failed` / `errors` | 批量：失败数与每条失败的原始下标 `index` + 错误码 `code` |
+| `deckId` | 本次写入实际使用的牌组 ID（由 `ensureDeck` 返回） |
+| `deckCreated` | 该牌组是否为本次写入**新创建**（true=新建，false=复用已有） |
+| `DECK_NAME_EMPTY` | `deck` 为空或只含空白字符时返回的业务错误（`isError=true`）；给出非空 `deck` 即可自动创建牌组 |
 
 ### 字段映射规则（add_note / add_notes）
 

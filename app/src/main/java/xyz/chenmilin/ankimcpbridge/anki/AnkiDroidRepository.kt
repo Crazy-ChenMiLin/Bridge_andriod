@@ -102,11 +102,11 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         if (trimmedName.length > 200) throw IllegalArgumentException("牌组名称过长（最多200字符）")
 
         deckList()[trimmedName.lowercase()]?.let { deckId ->
-            return@withContext AnkiDeck(id = deckId, name = trimmedName)
+            return@withContext AnkiDeck(id = deckId, name = trimmedName, created = false)
         }
         val deckId = addNewDeck(trimmedName)
             ?: throw DeckOperationException("创建牌组失败: $trimmedName")
-        AnkiDeck(id = deckId, name = trimmedName)
+        AnkiDeck(id = deckId, name = trimmedName, created = true)
     }
 
     override suspend fun addBasicNote(request: AddBasicNoteRequest): AddNoteResult =
@@ -119,6 +119,7 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
             if (request.back.isBlank()) throw IllegalArgumentException("back must not be blank")
 
             // 复用通用写入链路（写入 / 卡片移组 / 回读验证 / 刷新通知），避免两套独立底层逻辑。
+            logRepo.info("add_basic_note 请求参数摘要: deck=${request.deck.trim()}, noteCount=1")
             val modelId = AnkiModelResolver.resolveBasicModelId(appContext)
             val generic = doAddGenericNote(
                 AddGenericNoteRequest(
@@ -271,13 +272,14 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
     private suspend fun doAddGenericNote(request: AddGenericNoteRequest): AddGenericNoteResult =
         withContext(Dispatchers.IO) {
             ensureAvailable()
-            logRepo.info("开始通用写入: noteTypeId=${request.noteTypeId}, deck=${request.deck}")
             val noteTypeId = request.noteTypeId
             if (noteTypeId <= 0) {
                 throw ModelNotFoundException("笔记类型不存在或 noteTypeId 非法: $noteTypeId")
             }
 
             val deck = ensureDeck(request.deck)
+            // 请求参数摘要（仅记录 deck / noteTypeId / 数量，绝不记录字段内容、标签或 Token）。
+            logRepo.info("add_note 请求参数摘要: deck=${deck.name}, deckCreated=${deck.created}, noteTypeId=$noteTypeId, noteCount=1")
             val orderedFields = getFieldList(noteTypeId)?.toList()
                 ?: throw ModelNotFoundException("笔记类型不存在或无法读取字段: $noteTypeId")
 
@@ -288,7 +290,8 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
             val noteId = addGenericNoteRow(noteTypeId, deck.id, fieldValues, tags)
                 ?: return@withContext AddGenericNoteResult(
                     success = false, noteId = null, deck = deck.name,
-                    noteTypeId = noteTypeId, persisted = false, refreshNotified = false
+                    noteTypeId = noteTypeId, persisted = false, refreshNotified = false,
+                    deckId = deck.id, deckCreated = deck.created
                 ).also { logRepoWarn("插入笔记失败: $noteTypeId") }
 
             logRepo.info("Note 插入成功: noteId=$noteId")
@@ -313,7 +316,9 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                 deck = deck.name,
                 noteTypeId = noteTypeId,
                 persisted = persisted,
-                refreshNotified = refreshNotified
+                refreshNotified = refreshNotified,
+                deckId = deck.id,
+                deckCreated = deck.created
             )
         }
 
@@ -324,6 +329,8 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         withContext(Dispatchers.IO) {
             ensureAvailable()
             val deck = ensureDeck(request.deck)
+            // 请求参数摘要（仅记录 deck / 数量，绝不记录字段内容、标签或 Token）。
+            logRepo.info("add_notes 请求参数摘要: deck=${deck.name}, deckCreated=${deck.created}, noteCount=${request.notes.size}")
 
             // 1) 预校验 + 构造按模型分组的写入计划，记录原始下标与错误
             val errors = mutableListOf<BatchError>()
@@ -365,7 +372,8 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                     requested = requested, submitted = 0, succeeded = 0,
                     failed = calculateBatchFailed(requested, 0),
                     noteIds = emptyList(), noteIdsAvailable = false,
-                    errors = errors, persisted = false, refreshNotified = false
+                    errors = errors, persisted = false, refreshNotified = false,
+                    deckId = deck.id, deckCreated = deck.created
                 )
             }
 
@@ -409,7 +417,9 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                     noteIdsAvailable = false,
                     errors = errors + summary.insertErrors,
                     persisted = persisted,
-                    refreshNotified = refreshNotified
+                    refreshNotified = refreshNotified,
+                    deckId = deck.id,
+                    deckCreated = deck.created
                 )
             }
         }
@@ -533,6 +543,8 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         withContext(Dispatchers.IO) {
             ensureAvailable()
             val deck = ensureDeck(request.deck)
+            // 请求参数摘要（仅记录 deck / 数量，绝不记录字段内容、标签或 Token）。
+            logRepo.info("add_basic_notes 请求参数摘要: deck=${deck.name}, deckCreated=${deck.created}, noteCount=${request.notes.size}")
             val modelId = AnkiModelResolver.resolveBasicModelId(appContext)
 
             // 1) 预校验：不通过校验的卡片不会进入批量插入，记录原始下标。

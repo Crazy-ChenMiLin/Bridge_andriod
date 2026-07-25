@@ -35,7 +35,7 @@ class McpProtocolTest {
         val result = response.result!!.jsonObject
         assertEquals("2024-11-05", result["protocolVersion"]?.jsonPrimitive?.content)
         assertEquals("ankidroid-mcp-bridge", result["serverInfo"]?.jsonObject?.get("name")?.jsonPrimitive?.content)
-        assertEquals("0.2.1", result["serverInfo"]?.jsonObject?.get("version")?.jsonPrimitive?.content)
+        assertEquals("0.2.2", result["serverInfo"]?.jsonObject?.get("version")?.jsonPrimitive?.content)
     }
 
     @Test
@@ -738,6 +738,265 @@ class McpProtocolTest {
         assertFalse(batch["refreshNotified"]!!.jsonPrimitive.boolean)
     }
 
+    // ─── v0.2.2：空 deck 校验 / 自动创建牌组 / deckCreated 上报 ───
+
+    @Test
+    fun `tools call add_note empty deck returns DECK_NAME_EMPTY`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        val basicId = basicNoteTypeId()
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "add_note",
+                "arguments" to mapOf(
+                    "deck" to "",
+                    "noteTypeId" to basicId,
+                    "fields" to mapOf("Front" to "Q", "Back" to "A")
+                )
+            ))
+        ))
+        assertDeckNameEmpty(response)
+    }
+
+    @Test
+    fun `tools call add_note whitespace deck returns DECK_NAME_EMPTY`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        val basicId = basicNoteTypeId()
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "add_note",
+                "arguments" to mapOf(
+                    "deck" to "   ",
+                    "noteTypeId" to basicId,
+                    "fields" to mapOf("Front" to "Q", "Back" to "A")
+                )
+            ))
+        ))
+        assertDeckNameEmpty(response)
+    }
+
+    @Test
+    fun `tools call add_notes empty deck returns DECK_NAME_EMPTY`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        val basicId = basicNoteTypeId()
+        val notes = listOf(mapOf("noteTypeId" to basicId, "fields" to mapOf("Front" to "Q", "Back" to "A")))
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "add_notes",
+                "arguments" to mapOf("deck" to "", "notes" to notes)
+            ))
+        ))
+        assertDeckNameEmpty(response)
+    }
+
+    @Test
+    fun `tools call add_notes whitespace deck returns DECK_NAME_EMPTY`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        val basicId = basicNoteTypeId()
+        val notes = listOf(mapOf("noteTypeId" to basicId, "fields" to mapOf("Front" to "Q", "Back" to "A")))
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "add_notes",
+                "arguments" to mapOf("deck" to "   ", "notes" to notes)
+            ))
+        ))
+        assertDeckNameEmpty(response)
+    }
+
+    @Test
+    fun `tools call add_basic_note empty deck returns DECK_NAME_EMPTY`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "add_basic_note",
+                "arguments" to mapOf("deck" to "", "front" to "Q", "back" to "A")
+            ))
+        ))
+        assertDeckNameEmpty(response)
+    }
+
+    @Test
+    fun `tools call add_basic_note whitespace deck returns DECK_NAME_EMPTY`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "add_basic_note",
+                "arguments" to mapOf("deck" to "   ", "front" to "Q", "back" to "A")
+            ))
+        ))
+        assertDeckNameEmpty(response)
+    }
+
+    @Test
+    fun `tools call add_basic_notes empty deck returns DECK_NAME_EMPTY`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "add_basic_notes",
+                "arguments" to mapOf("deck" to "", "notes" to listOf(mapOf("front" to "Q", "back" to "A")))
+            ))
+        ))
+        assertDeckNameEmpty(response)
+    }
+
+    @Test
+    fun `tools call add_basic_notes whitespace deck returns DECK_NAME_EMPTY`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "add_basic_notes",
+                "arguments" to mapOf("deck" to "   ", "notes" to listOf(mapOf("front" to "Q", "back" to "A")))
+            ))
+        ))
+        assertDeckNameEmpty(response)
+    }
+
+    @Test
+    fun `tools call add_note auto-creates new deck and reports deckCreated true`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        val basicId = basicNoteTypeId()
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "add_note",
+                "arguments" to mapOf(
+                    "deck" to "新牌组_自动创建",
+                    "noteTypeId" to basicId,
+                    "fields" to mapOf("Front" to "Q", "Back" to "A")
+                )
+            ))
+        ))
+        assertNull(response.error)
+        assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val json = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertTrue(json["success"]!!.jsonPrimitive.boolean)
+        assertTrue(json["deckCreated"]!!.jsonPrimitive.boolean)
+        assertTrue(json["deckId"]!!.jsonPrimitive.long > 0)
+    }
+
+    @Test
+    fun `tools call add_note reuses existing deck and reports deckCreated false`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        val basicId = basicNoteTypeId()
+
+        val first = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "add_note",
+                "arguments" to mapOf(
+                    "deck" to "复用牌组",
+                    "noteTypeId" to basicId,
+                    "fields" to mapOf("Front" to "Q1", "Back" to "A1")
+                )
+            ))
+        ))
+        val firstJson = Json.parseToJsonElement(
+            first.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertTrue(firstJson["deckCreated"]!!.jsonPrimitive.boolean)
+        val deckId = firstJson["deckId"]!!.jsonPrimitive.long
+
+        val second = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "add_note",
+                "arguments" to mapOf(
+                    "deck" to "复用牌组",
+                    "noteTypeId" to basicId,
+                    "fields" to mapOf("Front" to "Q2", "Back" to "A2")
+                )
+            ))
+        ))
+        val secondJson = Json.parseToJsonElement(
+            second.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertFalse(secondJson["deckCreated"]!!.jsonPrimitive.boolean)
+        assertEquals(deckId, secondJson["deckId"]!!.jsonPrimitive.long)
+    }
+
+    @Test
+    fun `tools call add_notes auto-creates new deck and reports deckCreated true`() = runTest {
+        handler.handleRequest(buildRequest("initialize", mapOf(
+            "protocolVersion" to "2024-11-05",
+            "capabilities" to mapOf<String, Any>()
+        )))
+        val basicId = basicNoteTypeId()
+        val notes = listOf(
+            mapOf("noteTypeId" to basicId, "fields" to mapOf("Front" to "Q1", "Back" to "A1")),
+            mapOf("noteTypeId" to basicId, "fields" to mapOf("Front" to "Q2", "Back" to "A2"))
+        )
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "add_notes",
+                "arguments" to mapOf("deck" to "批量新牌组", "notes" to notes)
+            ))
+        ))
+        assertNull(response.error)
+        assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val json = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals(2, json["succeeded"]!!.jsonPrimitive.int)
+        assertTrue(json["deckCreated"]!!.jsonPrimitive.boolean)
+        assertTrue(json["deckId"]!!.jsonPrimitive.long > 0)
+    }
+
+    @Test
+    fun `add_note inputSchema deck enforces minLength 1`() = runTest {
+        val tools = parseResponse(handler.handleRequest(buildRequest("tools/list")))
+            .result!!.jsonObject["tools"]!!.jsonArray
+        val addNote = tools.first { it.jsonObject["name"]!!.jsonPrimitive.content == "add_note" }.jsonObject
+        val deckProp = addNote["inputSchema"]!!.jsonObject["properties"]!!.jsonObject["deck"]!!.jsonObject
+        assertEquals(1, deckProp["minLength"]!!.jsonPrimitive.int)
+    }
+
+    @Test
+    fun `add_note description documents auto-create deck and statelessness`() = runTest {
+        val tools = parseResponse(handler.handleRequest(buildRequest("tools/list")))
+            .result!!.jsonObject["tools"]!!.jsonArray
+        val desc = tools.first { it.jsonObject["name"]!!.jsonPrimitive.content == "add_note" }
+            .jsonObject["description"]!!.jsonPrimitive.content
+        assertTrue("add_note 描述应说明牌组会自动创建", desc.contains("自动创建"))
+        assertTrue("add_note 描述应说明工具无状态、不继承当前牌组", desc.contains("无状态"))
+    }
+
+    @Test
+    fun `ensure_deck description documents no state inheritance`() = runTest {
+        val tools = parseResponse(handler.handleRequest(buildRequest("tools/list")))
+            .result!!.jsonObject["tools"]!!.jsonArray
+        val desc = tools.first { it.jsonObject["name"]!!.jsonPrimitive.content == "ensure_deck" }
+            .jsonObject["description"]!!.jsonPrimitive.content
+        assertTrue("ensure_deck 描述应说明不会为后续调用设置当前牌组", desc.contains("无状态"))
+    }
+
     // ─── 辅助方法 ───
 
     private fun buildRequest(method: String, params: Map<String, Any>? = null): String {
@@ -786,5 +1045,24 @@ class McpProtocolTest {
                 )
             }
         )
+    }
+
+    private fun basicNoteTypeId(): Long {
+        val listJson = Json.parseToJsonElement(
+            parseResponse(handler.handleRequest(buildRequest("tools/call", mapOf("name" to "list_note_types"))))
+                .result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        return listJson["noteTypes"]!!.jsonArray.first {
+            it.jsonObject["name"]!!.jsonPrimitive.content == "Basic"
+        }.jsonObject["id"]!!.jsonPrimitive.long
+    }
+
+    private fun assertDeckNameEmpty(response: JsonRpcResponse) {
+        assertNull(response.error)
+        assertTrue(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val errJson = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals(BusinessErrorCodes.DECK_NAME_EMPTY, errJson["code"]?.jsonPrimitive?.content)
     }
 }

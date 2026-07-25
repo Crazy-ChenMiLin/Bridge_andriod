@@ -48,7 +48,7 @@ data class McpInitializeResult(
     val serverInfo: JsonObject = JsonObject(
         mapOf(
             "name" to JsonPrimitive("ankidroid-mcp-bridge"),
-            "version" to JsonPrimitive("0.2.1")
+            "version" to JsonPrimitive("0.2.2")
         )
     )
 )
@@ -96,6 +96,7 @@ object BusinessErrorCodes {
     const val INVALID_BACK = "INVALID_BACK"
     const val BATCH_TOO_LARGE = "BATCH_TOO_LARGE"
     const val NOTE_TYPE_NOT_FOUND = "NOTE_TYPE_NOT_FOUND"
+    const val DECK_NAME_EMPTY = "DECK_NAME_EMPTY"
     const val FIELD_NOT_FOUND = "FIELD_NOT_FOUND"
     const val NO_VALID_FIELD = "NO_VALID_FIELD"
     const val AMBIGUOUS_FIELD = "AMBIGUOUS_FIELD"

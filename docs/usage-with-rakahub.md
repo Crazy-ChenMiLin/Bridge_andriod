@@ -66,7 +66,7 @@
 2. 写入非 Basic 的笔记类型前，必须先 list_note_types 选 noteTypeId，再 get_note_type 拿字段名，
    然后按字段名生成 fields 调用 add_note / add_notes。不要凭空猜测字段名。
 3. fields 的键名必须与 get_note_type 返回一致；出现未知字段会被拒绝（isError=true）。
-4. 写入前先用 ensure_deck 确保目标牌组存在（add_* 也会自动建，可省略）。
+4. 每次写入都必须在 deck 参数里显式给出完整牌组名；add_* 会自动确保牌组存在（不存在即创建），多数情况无需先调 ensure_deck。注意：MCP 工具无状态，ensure_deck 不会为后续调用“记住”当前牌组，deck 绝不能留空（留空会返回 DECK_NAME_EMPTY）。
 5. 一次对话里出现多个知识点时，优先用批量接口（add_basic_notes / add_notes）一次写入。
 6. 不要在用户未确认前写入；写卡前先展示内容让用户确认。
 7. 写完后检查 persisted / refreshNotified：persisted=true 表示数据已落库。
@@ -86,7 +86,24 @@
 
 ---
 
-## 6. 关于同步的边界（重要）
+## 6. 关于空 deck：不会“继承”当前牌组（重要）
+
+MCP 工具是无状态的：`ensure_deck` 只负责“确保某个牌组存在”，**不会**为后续 `add_*` 调用设置“当前牌组”。
+
+- ❌ **错误**：先 `ensure_deck(name="英语词汇")`，再 `add_notes(deck="", ...)`，指望沿用刚才的牌组。结果：服务端收到空 `deck`，返回业务错误 `DECK_NAME_EMPTY`（`isError=true`），卡片不会写入。
+- ✅ **推荐**：直接 `add_note` / `add_notes`，在 `deck` 参数里显式给出牌组名；牌组不存在会自动创建，无需先调 `ensure_deck`。
+
+  ```
+  add_notes(deck="英语词汇", notes=[...])
+  ```
+
+- ✅ **也可**：先 `ensure_deck(name="英语词汇")` 预创建，再 `add_notes(deck="英语词汇", ...)`——但 `deck` 必须**每次都显式传同一个名字**，不能留空。
+
+> 一句话：每次写入都在 `deck` 参数里写全牌组名；不要依赖任何“上次调用”的状态。
+
+---
+
+## 7. 关于同步的边界（重要）
 
 本桥接写入后是**本地刷新通知**，不是 AnkiWeb 云同步：
 
@@ -97,7 +114,7 @@
 
 ---
 
-## 7. 排错
+## 8. 排错
 
 | 现象 | 原因 | 处理 |
 |------|------|------|
@@ -106,4 +123,5 @@
 | add_note 报 FIELD_NOT_FOUND | 字段名拼错或多了未知字段 | 先 get_note_type 拿准确字段名再生成 fields |
 | 卡片没进目标牌组 | 用了批量接口且 AnkiDroid 未返回 noteId | 属已知限制（批量路径）不影响卡片写入；单张接口可精确进组 |
 | persisted=false | 写入后回读验证未通过 | 卡片可能未真正落库，建议重试或检查 AnkiDroid 状态 |
+| add_* 报 DECK_NAME_EMPTY | deck 参数为空或只含空白 | 在 deck 参数里显式给出牌组名（add_* 会自动创建），不要依赖 ensure_deck 的状态继承 |
 | RakaHub 显示健康异常但功能正常 | 探针格式不匹配 | 可忽略，不影响生成 |

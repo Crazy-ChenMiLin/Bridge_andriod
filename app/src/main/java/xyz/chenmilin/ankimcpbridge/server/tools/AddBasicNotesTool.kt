@@ -8,7 +8,7 @@ class AddBasicNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
 
     override val definition = McpToolDef(
         name = "add_basic_notes",
-        description = "批量向指定牌组添加 Basic 类型（正面/背面）卡片，一次最多 100 张。当一段对话里提炼出多个值得记忆的知识点时，把整批卡片一次性写入，比反复调用 add_basic_note 更高效。",
+        description = "批量向指定牌组添加 Basic 类型（正面/背面）卡片，一次最多 100 张。当一段对话里提炼出多个值得记忆的知识点时，把整批卡片一次性写入，比反复调用 add_basic_note 更高效。目标牌组不存在时会自动创建，无需先调用 ensure_deck。注意：每个工具调用都是无状态的，ensure_deck 并不会为后续调用“记住”当前牌组，每次写入都必须在参数里显式给出 deck。",
         inputSchema = JsonObject(
             mapOf(
                 "type" to JsonPrimitive("object"),
@@ -17,7 +17,8 @@ class AddBasicNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
                         "deck" to JsonObject(
                             mapOf(
                                 "type" to JsonPrimitive("string"),
-                                "description" to JsonPrimitive("目标牌组名称")
+                                "minLength" to JsonPrimitive(1),
+                                "description" to JsonPrimitive("目标牌组名称（必填，不可为空；不存在时自动创建）")
                             )
                         ),
                         "notes" to JsonObject(
@@ -56,6 +57,9 @@ class AddBasicNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
     override suspend fun call(arguments: JsonObject?): McpToolCallResult {
         val deck = arguments?.get("deck")?.jsonPrimitive?.content
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: deck")
+        if (deck.isBlank()) {
+            return businessError(BusinessErrorCodes.DECK_NAME_EMPTY, "deck 不能为空，必须显式提供目标牌组名称（不存在将自动创建）")
+        }
         val notesArray = arguments["notes"]?.jsonArray
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: notes")
 

@@ -223,6 +223,86 @@ class FakeAnkiRepositoryTest {
         assertTrue(result.refreshNotified)
     }
 
+    // ─── v0.2.2：空 deck 校验 / 自动创建牌组 / deckCreated 上报 ───
+
+    @Test
+    fun `ensureDeck reports created true for new deck and false for existing`() = runTest {
+        val created = repo.ensureDeck("v022 新牌组")
+        assertTrue(created.created)
+        val reused = repo.ensureDeck("v022 新牌组")
+        assertFalse(reused.created)
+        assertEquals(created.id, reused.id)
+    }
+
+    @Test
+    fun `addNote reports deckCreated true for new deck and false when reused`() = runTest {
+        val algo = repo.listNoteTypes().first { it.name == "MCP 算法题" }
+        val first = repo.addNote(
+            AddGenericNoteRequest(
+                deck = "v022 自动建组", noteTypeId = algo.id,
+                fields = mapOf("题目" to "t", "核心思路" to "c", "复杂度" to "o", "Java代码" to "j", "易错点" to "e", "来源" to "s")
+            )
+        )
+        assertTrue(first.deckCreated)
+        assertTrue(first.deckId > 0)
+
+        val second = repo.addNote(
+            AddGenericNoteRequest(
+                deck = "v022 自动建组", noteTypeId = algo.id,
+                fields = mapOf("题目" to "t2", "核心思路" to "c2", "复杂度" to "o2", "Java代码" to "j2", "易错点" to "e2", "来源" to "s2")
+            )
+        )
+        assertFalse(second.deckCreated)
+        assertEquals(first.deckId, second.deckId)
+    }
+
+    @Test
+    fun `addNotes reports deckCreated true for new deck`() = runTest {
+        val basic = repo.listNoteTypes().first { it.name == "Basic" }
+        val result = repo.addNotes(
+            AddGenericNotesRequest(
+                deck = "v022 批量建组", notes = listOf(
+                    GenericNoteItem(noteTypeId = basic.id, fields = mapOf("Front" to "Q", "Back" to "A"))
+                )
+            )
+        )
+        assertEquals(1, result.succeeded)
+        assertTrue(result.deckCreated)
+        assertTrue(result.deckId > 0)
+    }
+
+    @Test
+    fun `addNote rejects blank deck with exception`() = runTest {
+        val basic = repo.listNoteTypes().first { it.name == "Basic" }
+        try {
+            repo.addNote(
+                AddGenericNoteRequest(
+                    deck = "   ", noteTypeId = basic.id,
+                    fields = mapOf("Front" to "Q", "Back" to "A")
+                )
+            )
+            fail("Expected IllegalArgumentException for blank deck")
+        } catch (e: IllegalArgumentException) {
+            // 仓库层对空白 deck 抛出非法参数（工具层转换为 DECK_NAME_EMPTY）
+        }
+    }
+
+    @Test
+    fun `addNote rejects empty deck with exception`() = runTest {
+        val basic = repo.listNoteTypes().first { it.name == "Basic" }
+        try {
+            repo.addNote(
+                AddGenericNoteRequest(
+                    deck = "", noteTypeId = basic.id,
+                    fields = mapOf("Front" to "Q", "Back" to "A")
+                )
+            )
+            fail("Expected IllegalArgumentException for empty deck")
+        } catch (e: IllegalArgumentException) {
+            // 仓库层对空 deck 抛出非法参数（工具层转换为 DECK_NAME_EMPTY）
+        }
+    }
+
     @Test
     fun `addNote rejects unknown field`() = runTest {
         val basic = repo.listNoteTypes().first { it.name == "Basic" }

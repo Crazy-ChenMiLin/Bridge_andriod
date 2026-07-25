@@ -85,10 +85,11 @@ class FakeAnkiRepository : AnkiRepository {
         if (!permissionGranted) throw AnkiPermissionDeniedException()
 
         val trimmed = name.trim()
+        if (trimmed.isEmpty()) throw IllegalArgumentException("牌组名称不能为空")
         val existing = decks.find { it.name.equals(trimmed, ignoreCase = true) }
-        if (existing != null) return existing
+        if (existing != null) return existing.copy(created = false)
 
-        val deck = AnkiDeck(id = nextDeckId++, name = trimmed)
+        val deck = AnkiDeck(id = nextDeckId++, name = trimmed, created = true)
         decks.add(deck)
         return deck
     }
@@ -204,7 +205,8 @@ class FakeAnkiRepository : AnkiRepository {
         // 内存实现：写入后即可读回，persisted=true；刷新通知在真实实现中发送，此处标记为已通知。
         return AddGenericNoteResult(
             success = true, noteId = noteId, deck = deck.name,
-            noteTypeId = nt.id, persisted = true, refreshNotified = !simulateRefreshFailure
+            noteTypeId = nt.id, persisted = true, refreshNotified = !simulateRefreshFailure,
+            deckId = deck.id, deckCreated = deck.created
         )
     }
 
@@ -295,7 +297,9 @@ class FakeAnkiRepository : AnkiRepository {
             noteIdsAvailable = false,
             errors = errors + summary.insertErrors,
             persisted = persisted,
-            refreshNotified = refreshNotified
+            refreshNotified = refreshNotified,
+            deckId = deck.id,
+            deckCreated = deck.created
         )
     }
 

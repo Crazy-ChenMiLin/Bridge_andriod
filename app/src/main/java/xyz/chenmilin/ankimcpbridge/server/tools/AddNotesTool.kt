@@ -8,13 +8,19 @@ class AddNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
 
     override val definition = McpToolDef(
         name = "add_notes",
-        description = "批量按指定笔记类型写入多张笔记，一次最多 100 张。每条可指定自己的 noteTypeId、fields 与 tags（fields 的键名需与目标笔记类型字段名一致，未知字段会报错）。同一批次共享同一个 deck。写入后会回读验证持久化并通知 AnkiDroid 本地刷新（非 AnkiWeb 云同步）。",
+        description = "批量按指定笔记类型写入多张笔记，一次最多 100 张。每条可指定自己的 noteTypeId、fields 与 tags（fields 的键名需与目标笔记类型字段名一致，未知字段会报错）。同一批次共享同一个 deck。写入后会回读验证持久化并通知 AnkiDroid 本地刷新（非 AnkiWeb 云同步）。目标牌组不存在时会自动创建，无需先调用 ensure_deck。注意：每个工具调用都是无状态的，ensure_deck 并不会为后续调用“记住”当前牌组，每次写入都必须在参数里显式给出 deck。推荐流程：list_note_types → get_note_type → add_note/add_notes。",
         inputSchema = JsonObject(
             mapOf(
                 "type" to JsonPrimitive("object"),
                 "properties" to JsonObject(
                     mapOf(
-                        "deck" to JsonObject(mapOf("type" to JsonPrimitive("string"), "description" to JsonPrimitive("目标牌组名称"))),
+                        "deck" to JsonObject(
+                            mapOf(
+                                "type" to JsonPrimitive("string"),
+                                "minLength" to JsonPrimitive(1),
+                                "description" to JsonPrimitive("目标牌组名称（必填，不可为空；不存在时自动创建）")
+                            )
+                        ),
                         "notes" to JsonObject(
                             mapOf(
                                 "type" to JsonPrimitive("array"),
@@ -44,6 +50,9 @@ class AddNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
     override suspend fun call(arguments: JsonObject?): McpToolCallResult {
         val deck = arguments?.get("deck")?.jsonPrimitive?.content
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: deck")
+        if (deck.isBlank()) {
+            return businessError(BusinessErrorCodes.DECK_NAME_EMPTY, "deck 不能为空，必须显式提供目标牌组名称（不存在将自动创建）")
+        }
         val notesArray = arguments["notes"]?.jsonArray
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: notes")
 
@@ -80,6 +89,8 @@ class AddNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
                     "noteIdsAvailable" to JsonPrimitive(result.noteIdsAvailable),
                     "persisted" to JsonPrimitive(result.persisted),
                     "refreshNotified" to JsonPrimitive(result.refreshNotified),
+                    "deckId" to JsonPrimitive(result.deckId),
+                    "deckCreated" to JsonPrimitive(result.deckCreated),
                     "errors" to JsonArray(result.errors.map { err ->
                         JsonObject(
                             mapOf(
