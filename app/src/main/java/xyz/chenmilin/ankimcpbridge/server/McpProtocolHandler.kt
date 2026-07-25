@@ -55,6 +55,7 @@ class McpProtocolHandler(
         toolRegistry.register(PcModelFieldNamesTool(ankiRepository))
         toolRegistry.register(PcAddNoteTool(ankiRepository))
         toolRegistry.register(PcAddNotesTool(ankiRepository))
+        toolRegistry.register(PcCanAddNotesTool(ankiRepository))
         toolRegistry.register(PcFindNotesTool(ankiRepository))
         toolRegistry.register(PcFindCardsTool(ankiRepository))
         toolRegistry.register(PcNotesInfoTool(ankiRepository))

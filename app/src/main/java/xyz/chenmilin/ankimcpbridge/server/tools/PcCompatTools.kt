@@ -164,6 +164,36 @@ private suspend fun duplicateNoteIdOrNull(
     return ankiRepository.findDuplicateNotes(noteType.id, firstFieldValue).firstOrNull()
 }
 
+private suspend fun canAddPcNote(
+    ankiRepository: AnkiRepository,
+    noteArgs: JsonObject,
+    sharedDeckName: String? = null,
+    sharedModelName: String? = null,
+    sharedOptions: JsonObject = JsonObject(emptyMap())
+): Boolean {
+    val deckName = noteArgs.stringValue("deckName", "deck_name") ?: sharedDeckName
+    if (deckName.isNullOrBlank()) return false
+    val modelName = noteArgs.stringValue("modelName", "model_name") ?: sharedModelName
+    if (modelName.isNullOrBlank()) return false
+    if (noteArgs.unsupportedAttachmentNames().isNotEmpty()) return false
+    val fields = noteArgs["fields"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: return false
+    return try {
+        val noteType = findNoteTypeByName(ankiRepository, modelName)
+        val duplicateOptions = mutableMapOf<String, JsonElement>()
+        duplicateOptions.putAll(sharedOptions)
+        duplicateOptions.putAll(noteArgs)
+        duplicateNoteIdOrNull(ankiRepository, noteType, fields, JsonObject(duplicateOptions)) == null
+    } catch (e: ModelNotFoundException) {
+        false
+    } catch (e: FieldMappingException) {
+        false
+    } catch (e: ToolErrorException) {
+        false
+    } catch (e: IllegalArgumentException) {
+        false
+    }
+}
+
 class PcListDecksTool(private val ankiRepository: AnkiRepository) : McpTool {
     override val definition = McpToolDef(
         name = "listDecks",
@@ -473,6 +503,54 @@ class PcAddNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
                 }
             }
             McpToolCallResult(listOf(McpToolContent(text = JsonArray(noteIds).toString())))
+        } catch (e: Exception) {
+            pcExceptionError(e)
+        }
+    }
+}
+
+class PcCanAddNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "canAddNotes",
+        description = "AnkiConnect compatible alias: validate candidate notes without writing anything.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(
+                    mapOf(
+                        "deckName" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "deck_name" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "modelName" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "model_name" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "notes" to JsonObject(mapOf("type" to JsonPrimitive("array"))),
+                        "allowDuplicate" to JsonObject(mapOf("type" to JsonPrimitive("boolean"))),
+                        "duplicateScope" to JsonObject(mapOf("type" to JsonPrimitive("string")))
+                    )
+                ),
+                "required" to JsonArray(listOf(JsonPrimitive("notes")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val args = arguments ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数")
+        val notesArray = args["notes"]?.jsonArray
+            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: notes")
+        val sharedDeckName = args.stringValue("deckName", "deck_name")
+        val sharedModelName = args.stringValue("modelName", "model_name")
+        return try {
+            val results = notesArray.map { element ->
+                JsonPrimitive(
+                    canAddPcNote(
+                        ankiRepository = ankiRepository,
+                        noteArgs = element.jsonObject,
+                        sharedDeckName = sharedDeckName,
+                        sharedModelName = sharedModelName,
+                        sharedOptions = args
+                    )
+                )
+            }
+            McpToolCallResult(listOf(McpToolContent(text = JsonArray(results).toString())))
         } catch (e: Exception) {
             pcExceptionError(e)
         }

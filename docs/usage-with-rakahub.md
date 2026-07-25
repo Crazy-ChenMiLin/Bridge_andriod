@@ -1,6 +1,6 @@
 # 用 RakaHub + AI 聊天生成 Anki 卡片
 
-本桥接（AnkiDroid MCP Bridge）把 AnkiDroid 的能力暴露成 42 个 MCP 工具。
+本桥接（AnkiDroid MCP Bridge）把 AnkiDroid 的能力暴露成 43 个 MCP 工具。
 只要 RakaHub 作为 MCP Client 连上本桥接，并把这些工具交给 AI，就能实现：
 **在对话中聊天 → AI 自动调工具 → 卡片进入 AnkiDroid**。
 
@@ -15,7 +15,7 @@
   - 地址：`http://127.0.0.1:8766/mcp`
   - 认证：点击本 App 内「复制到 RakaHub」按钮，把得到的完整值 `Bearer 1356`（已含 `Bearer ` 前缀）
     直接粘贴到 RakaHub 的「请求头值」中，**不要手动输入 Bearer 或空格**
-- RakaHub 能列出 42 个工具即为连接成功
+- RakaHub 能列出 43 个工具即为连接成功
 
 > 如果 RakaHub 侧显示「健康检查」异常，但 `list_decks` / `add_basic_note` 都能正常调用，
 > 那是 RakaHub 的连通性探针与 `/health` 端点格式不匹配，**不影响卡片生成**。
@@ -53,6 +53,7 @@
 | `modelFieldNames` | 按 `modelName` 获取字段名 |
 | `addNote` | 按 `deckName` + `modelName` + `fields` 写入单条笔记；成功返回 noteId，重复返回 `null` |
 | `addNotes` | 批量写入 ≤100 条；支持 PC 常见的每条 note 自带 `deckName`/`modelName`，也支持顶层共享 `deckName`/`modelName`；返回 noteId/`null` 数组 |
+| `canAddNotes` | 校验候选笔记能否写入，不创建牌组、不写入数据 |
 | `findNotes` | 使用 Anki 搜索语法查找 noteId |
 | `findCards` | 使用 Anki 搜索语法查找 cardId（安卓端通过 note 搜索再映射卡片） |
 | `notesInfo` | 查询 note 的字段、标签、笔记类型；字段形状为 `fields.字段名.value/order` |

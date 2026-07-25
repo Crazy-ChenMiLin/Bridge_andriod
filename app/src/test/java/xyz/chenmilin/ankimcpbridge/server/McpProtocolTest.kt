@@ -109,7 +109,7 @@ class McpProtocolTest {
         assertTrue(toolNames.containsAll(
             listOf(
                 "listDecks", "deckNames", "deckNamesAndIds", "createDeck",
-                "modelNames", "modelNamesAndIds", "modelFieldNames", "addNote", "addNotes",
+                "modelNames", "modelNamesAndIds", "modelFieldNames", "addNote", "addNotes", "canAddNotes",
                 "findNotes", "findCards", "notesInfo", "cardsInfo", "cardsToNotes",
                 "getDecks", "suspend", "areSuspended", "areDue", "getIntervals",
                 "updateNoteFields", "getTags", "addTags", "removeTags",
@@ -424,6 +424,44 @@ class McpProtocolTest {
         val decks = ankiRepo.listDecks().map { it.name }
         assertTrue(decks.contains("PC Per Note A"))
         assertTrue(decks.contains("PC Per Note B"))
+    }
+
+    @Test
+    fun `pc compatible canAddNotes validates candidates without writing`() = runTest {
+        parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "deckName" to "PC Can Add",
+                    "modelName" to "Basic",
+                    "fields" to mapOf("Front" to "Existing can-add front", "Back" to "A")
+                )
+            ))
+        )).also { assertFalse(it.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean) }
+
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "canAddNotes",
+                "arguments" to mapOf(
+                    "deckName" to "PC Can Add",
+                    "modelName" to "Basic",
+                    "notes" to listOf(
+                        mapOf("fields" to mapOf("Front" to "Fresh can-add front", "Back" to "A")),
+                        mapOf("fields" to mapOf("Front" to "Existing can-add front", "Back" to "Duplicate")),
+                        mapOf("fields" to mapOf("Front" to "Existing can-add front", "Back" to "Allowed"), "allowDuplicate" to true),
+                        mapOf("fields" to mapOf("Front" to "Bad field front", "Missing" to "Nope")),
+                        mapOf("fields" to mapOf("Front" to "Media front", "Back" to "A"), "audio" to listOf(mapOf("url" to "https://example.com/a.mp3")))
+                    )
+                )
+            ))
+        ))
+        assertNull(response.error)
+        assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val result = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray.map { it.jsonPrimitive.boolean }
+        assertEquals(listOf(true, false, true, false, false), result)
+        assertEquals(1, ankiRepo.noteCount())
     }
 
     @Test
