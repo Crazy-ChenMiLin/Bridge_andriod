@@ -96,7 +96,7 @@ class McpProtocolHandler(
         return try {
             when (request.method) {
                 "initialize" -> handleInitialize(request)
-                "notifications/initialized" -> handleNotificationInitialized(request)
+                "notifications/initialized" -> handleNotificationInitialized()
                 "ping" -> handlePing(request)
                 "tools/list" -> handleToolsList(request)
                 "tools/call" -> runBlocking { handleToolsCall(request) }
@@ -109,7 +109,7 @@ class McpProtocolHandler(
             // 结构性参数错误 -> JSON-RPC error
             buildErrorResponse(
                 request.id, McpErrorCodes.INVALID_PARAMS,
-                e.message ?: "Invalid params",
+                e.message,
                 JsonObject(mapOf("code" to JsonPrimitive(e.errorCode)))
             )
         } catch (e: Exception) {
@@ -154,7 +154,7 @@ class McpProtocolHandler(
         return buildSuccessResponse(request.id, result)
     }
 
-    private fun handleNotificationInitialized(request: JsonRpcRequest): String {
+    private fun handleNotificationInitialized(): String {
         logRepo.info("收到 notifications/initialized")
         return ""
     }
@@ -220,7 +220,7 @@ class McpProtocolHandler(
         } catch (e: ToolErrorException) {
             buildErrorResponse(
                 request.id, McpErrorCodes.INVALID_PARAMS,
-                e.message ?: "Invalid params",
+                e.message,
                 JsonObject(mapOf("code" to JsonPrimitive(e.errorCode)))
             )
         } catch (e: Exception) {

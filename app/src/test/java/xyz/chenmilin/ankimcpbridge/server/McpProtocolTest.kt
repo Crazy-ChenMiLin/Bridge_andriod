@@ -1709,17 +1709,20 @@ class McpProtocolTest {
                 is Boolean -> JsonPrimitive(value)
                 is List<*> -> JsonArray(value.map { v ->
                     when (v) {
-                        is Map<*, *> -> mapToJsonElement(v as Map<String, Any>)
+                        is Map<*, *> -> mapToJsonElement(v.toStringAnyMap())
                         is String -> JsonPrimitive(v)
                         else -> JsonPrimitive(v.toString())
                     }
                 })
-                is Map<*, *> -> mapToJsonElement(value as Map<String, Any>)
+                is Map<*, *> -> mapToJsonElement(value.toStringAnyMap())
                 else -> JsonPrimitive(value.toString())
             }
         }
         return JsonObject(entries.toMap())
     }
+
+    private fun Map<*, *>.toStringAnyMap(): Map<String, Any> =
+        entries.associate { (key, value) -> key.toString() to (value ?: "") }
 
     private fun parseResponse(text: String): JsonRpcResponse {
         val json = Json.parseToJsonElement(text).jsonObject
