@@ -450,7 +450,7 @@ class FakeAnkiRepository : AnkiRepository {
                     else -> true
                 }
             }
-            .take(limit.coerceIn(1, 500))
+            .take(limit.coerceAtLeast(1))
             .toList()
     }
 

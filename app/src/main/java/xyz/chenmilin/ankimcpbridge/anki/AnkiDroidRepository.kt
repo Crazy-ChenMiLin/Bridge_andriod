@@ -87,8 +87,7 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
 
     private suspend fun doListDecks(): List<AnkiDeck> = withContext(Dispatchers.IO) {
         ensureAvailable()
-        deckList().map { (name, id) -> AnkiDeck(id = id, name = name) }
-            .sortedBy { it.name }
+        readDecks().sortedBy { it.name }
     }
 
     override suspend fun ensureDeck(name: String): AnkiDeck = withAnkiRetry {
@@ -465,6 +464,7 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
     override suspend fun getCards(deckName: String?, cardState: String?, limit: Int): List<AnkiCardInfo> = withAnkiRetry {
         withContext(Dispatchers.IO) {
             ensureAvailable()
+            val deckNamesById = deckNamesById()
             val deckId = deckName?.trim()?.takeIf { it.isNotEmpty() }?.let { target ->
                 deckList()[target.lowercase()] ?: return@withContext emptyList()
             }
@@ -476,8 +476,8 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                 null,
                 null
             )?.use { cursor ->
-                while (cursor.moveToNext() && result.size < limit.coerceIn(1, 500)) {
-                    val card = cursor.toCardInfo() ?: continue
+                while (cursor.moveToNext() && result.size < limit.coerceAtLeast(1)) {
+                    val card = cursor.toCardInfo(deckNamesById) ?: continue
                     if (deckId != null && card.deckId != deckId) continue
                     if (!matchesCardState(card, cardState)) continue
                     result.add(card)
@@ -490,6 +490,7 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
     override suspend fun getDueCards(deckName: String?, limit: Int): List<AnkiCardInfo> = withAnkiRetry {
         withContext(Dispatchers.IO) {
             ensureAvailable()
+            val deckNamesById = deckNamesById()
             val args = mutableListOf(limit.coerceIn(1, 100).toString())
             var selection = "limit=?"
             deckName?.trim()?.takeIf { it.isNotEmpty() }?.let { name ->
@@ -508,7 +509,7 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                 val noteIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.ReviewInfo.NOTE_ID)
                 val ordIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.ReviewInfo.CARD_ORD)
                 while (cursor.moveToNext()) {
-                    readCardInfoByNoteOrd(cursor.getLong(noteIdx), cursor.getInt(ordIdx))?.let { result.add(it) }
+                    readCardInfoByNoteOrd(cursor.getLong(noteIdx), cursor.getInt(ordIdx), deckNamesById)?.let { result.add(it) }
                 }
             }
             result
@@ -518,7 +519,7 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
     override suspend fun presentCard(cardId: Long): AnkiCardInfo? = withAnkiRetry {
         withContext(Dispatchers.IO) {
             ensureAvailable()
-            readCardInfo(cardId)
+            readCardInfo(cardId, deckNamesById())
         }
     }
 
@@ -543,7 +544,7 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         withContext(Dispatchers.IO) {
             ensureAvailable()
             if (rating !in 1..4) throw IllegalArgumentException("rating must be 1..4")
-            val card = readCardInfo(cardId) ?: return@withContext false
+            val card = readCardInfo(cardId, deckNamesById()) ?: return@withContext false
             val values = ContentValues().apply {
                 put(FlashCardsContract.ReviewInfo.NOTE_ID, card.noteId)
                 put(FlashCardsContract.ReviewInfo.CARD_ORD, card.ord)
@@ -619,7 +620,7 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                 .mapValues { (noteTypeId, plans) ->
                     ModelBatchPlan(
                         noteTypeId = noteTypeId,
-                        values = plans.map { buildGenericValues(it.noteTypeId, deck.id, it.fields, it.tags) },
+                        values = plans.map { buildGenericValues(it.noteTypeId, it.fields, it.tags) },
                         originalIndexes = plans.map { it.index }
                     )
                 }
@@ -669,7 +670,7 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         fields: List<String>,
         tags: List<String>
     ): Long? {
-        val values = buildGenericValues(modelId, deckId, fields, tags)
+        val values = buildGenericValues(modelId, fields, tags)
         val newNoteUri = appContext.contentResolver.insert(FlashCardsContract.Note.CONTENT_URI, values)
             ?: return null
         val noteId = newNoteUri.lastPathSegment?.toLongOrNull() ?: return null
@@ -734,25 +735,25 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
             updatedCount
         }
 
-    private fun readCardInfo(cardId: Long): AnkiCardInfo? {
+    private fun readCardInfo(cardId: Long, deckNamesById: Map<Long, String>): AnkiCardInfo? {
         val uri = Uri.withAppendedPath(FlashCardsContract.Card.CONTENT_URI, cardId.toString())
         return appContext.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             if (!cursor.moveToFirst()) return@use null
-            cursor.toCardInfo()
+            cursor.toCardInfo(deckNamesById)
         }
     }
 
-    private fun readCardInfoByNoteOrd(noteId: Long, ord: Int): AnkiCardInfo? {
+    private fun readCardInfoByNoteOrd(noteId: Long, ord: Int, deckNamesById: Map<Long, String>): AnkiCardInfo? {
         val noteUri = Uri.withAppendedPath(FlashCardsContract.Note.CONTENT_URI, noteId.toString())
         val cardsUri = Uri.withAppendedPath(noteUri, "cards")
         val cardUri = Uri.withAppendedPath(cardsUri, ord.toString())
         return appContext.contentResolver.query(cardUri, null, null, null, null)?.use { cursor ->
             if (!cursor.moveToFirst()) return@use null
-            cursor.toCardInfo()
+            cursor.toCardInfo(deckNamesById)
         }
     }
 
-    private fun android.database.Cursor.toCardInfo(): AnkiCardInfo? {
+    private fun android.database.Cursor.toCardInfo(deckNamesById: Map<Long, String>): AnkiCardInfo? {
         val idIdx = getColumnIndex(FlashCardsContract.Card._ID)
         val noteIdx = getColumnIndex(FlashCardsContract.Card.NOTE_ID)
         val ordIdx = getColumnIndex(FlashCardsContract.Card.CARD_ORD)
@@ -764,7 +765,7 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
             noteId = getLong(noteIdx),
             ord = getInt(ordIdx),
             deckId = deckId,
-            deckName = deckList().entries.firstOrNull { it.value == deckId }?.key.orEmpty(),
+            deckName = deckNamesById[deckId].orEmpty(),
             cardName = getOptionalString(FlashCardsContract.Card.CARD_NAME).orEmpty(),
             question = getOptionalString(FlashCardsContract.Card.QUESTION).orEmpty(),
             answer = getOptionalString(FlashCardsContract.Card.ANSWER).orEmpty(),
@@ -813,7 +814,6 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
 
     private fun buildGenericValues(
         modelId: Long,
-        deckId: Long,
         fields: List<String>,
         tags: List<String>
     ): ContentValues {
@@ -999,7 +999,15 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
 
     /** 等价 [AddContentApi.deckList]：返回 deckName(小写) -> deckId 的映射。 */
     private fun deckList(): Map<String, Long> {
-        val map = mutableMapOf<String, Long>()
+        return readDecks().associate { it.name.lowercase() to it.id }
+    }
+
+    private fun deckNamesById(): Map<Long, String> {
+        return readDecks().associate { it.id to it.name }
+    }
+
+    private fun readDecks(): List<AnkiDeck> {
+        val decks = mutableListOf<AnkiDeck>()
         appContext.contentResolver.query(
             FlashCardsContract.Deck.CONTENT_ALL_URI, null, null, null, null
         )?.use { cursor ->
@@ -1008,10 +1016,10 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idIdx)
                 val name = cursor.getString(nameIdx) ?: continue
-                map[name.lowercase()] = id
+                decks.add(AnkiDeck(id = id, name = name))
             }
         }
-        return map
+        return decks
     }
 
     /** 等价 [AddContentApi.addNewDeck]。 */

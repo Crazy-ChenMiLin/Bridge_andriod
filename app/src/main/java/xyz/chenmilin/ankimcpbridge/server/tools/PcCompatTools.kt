@@ -664,7 +664,7 @@ class PcGetCardsTool(private val ankiRepository: AnkiRepository) : McpTool {
     override suspend fun call(arguments: JsonObject?): McpToolCallResult = try {
         val deckName = arguments?.get("deck_name")?.jsonPrimitive?.content
         val state = arguments?.get("card_state")?.jsonPrimitive?.content
-        val limit = arguments?.get("limit")?.jsonPrimitive?.content?.toIntOrNull() ?: 100
+        val limit = (arguments?.get("limit")?.jsonPrimitive?.content?.toIntOrNull() ?: 100).coerceIn(1, 500)
         val cards = ankiRepository.getCards(deckName, state, limit)
         McpToolCallResult(listOf(McpToolContent(text = JsonArray(cards.map { cardToJson(it) }).toString())))
     } catch (e: Exception) {
@@ -694,7 +694,7 @@ class PcGetDueCardsTool(private val ankiRepository: AnkiRepository) : McpTool {
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult = try {
         val deckName = arguments?.get("deck_name")?.jsonPrimitive?.content
-        val limit = arguments?.get("limit")?.jsonPrimitive?.content?.toIntOrNull() ?: 20
+        val limit = (arguments?.get("limit")?.jsonPrimitive?.content?.toIntOrNull() ?: 20).coerceIn(1, 100)
         val cards = ankiRepository.getDueCards(deckName, limit)
         McpToolCallResult(listOf(McpToolContent(text = JsonArray(cards.map { cardToJson(it) }).toString())))
     } catch (e: Exception) {
@@ -817,7 +817,7 @@ class PcDeckStatsTool(private val ankiRepository: AnkiRepository) : McpTool {
         val deck = arguments?.get("deck")?.jsonPrimitive?.content
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: deck")
         return try {
-            val cards = ankiRepository.getCards(deckName = deck, limit = 500)
+            val cards = ankiRepository.getCards(deckName = deck, limit = Int.MAX_VALUE)
             val json = JsonObject(
                 mapOf(
                     "deck" to JsonPrimitive(deck),
@@ -840,7 +840,7 @@ class PcCollectionStatsTool(private val ankiRepository: AnkiRepository) : McpToo
     )
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult = try {
-        val cards = ankiRepository.getCards(limit = 500)
+        val cards = ankiRepository.getCards(limit = Int.MAX_VALUE)
         val byDeck = cards.groupBy { it.deckName }
             .mapValues { (_, deckCards) -> cardCounts(deckCards) }
             .mapKeys { it.key.ifBlank { "(unknown)" } }
@@ -849,7 +849,7 @@ class PcCollectionStatsTool(private val ankiRepository: AnkiRepository) : McpToo
                 "counts" to cardCounts(cards),
                 "decks" to JsonObject(byDeck),
                 "statsLevel" to JsonPrimitive("android_card_counts"),
-                "limitApplied" to JsonPrimitive(cards.size >= 500)
+                "limitApplied" to JsonPrimitive(false)
             )
         )
         McpToolCallResult(listOf(McpToolContent(text = json.toString())))
