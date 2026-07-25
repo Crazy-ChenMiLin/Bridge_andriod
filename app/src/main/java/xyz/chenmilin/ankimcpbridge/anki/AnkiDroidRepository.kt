@@ -436,6 +436,131 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         updateTags(noteIds, tags, add = false)
     }
 
+    override suspend fun replaceTags(noteIds: List<Long>, tagToReplace: String, replaceWithTag: String): Int = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val from = tagToReplace.trim()
+            val to = replaceWithTag.trim()
+            if (from.isEmpty() || to.isEmpty() || from.contains(" ") || to.contains(" ")) {
+                throw IllegalArgumentException("tagToReplace/replaceWithTag must be single non-empty tags")
+            }
+            var updatedCount = 0
+            noteIds.take(100).forEach { noteId ->
+                val current = readNoteInfo(noteId) ?: return@forEach
+                if (!current.tags.contains(from)) return@forEach
+                val nextTags = current.tags.map { if (it == from) to else it }.distinct()
+                val values = ContentValues().apply {
+                    put(FlashCardsContract.Note.TAGS, nextTags.joinToString(" "))
+                }
+                val uri = Uri.withAppendedPath(FlashCardsContract.Note.CONTENT_URI, noteId.toString())
+                if (appContext.contentResolver.update(uri, values, null, null) > 0) {
+                    updatedCount++
+                }
+            }
+            if (updatedCount > 0) notifyAnkiChanged()
+            updatedCount
+        }
+    }
+
+    override suspend fun getCards(deckName: String?, cardState: String?, limit: Int): List<AnkiCardInfo> = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val deckId = deckName?.trim()?.takeIf { it.isNotEmpty() }?.let { target ->
+                deckList()[target.lowercase()] ?: return@withContext emptyList()
+            }
+            val result = mutableListOf<AnkiCardInfo>()
+            appContext.contentResolver.query(
+                FlashCardsContract.Card.CONTENT_URI,
+                null,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                while (cursor.moveToNext() && result.size < limit.coerceIn(1, 500)) {
+                    val card = cursor.toCardInfo() ?: continue
+                    if (deckId != null && card.deckId != deckId) continue
+                    if (!matchesCardState(card, cardState)) continue
+                    result.add(card)
+                }
+            }
+            result
+        }
+    }
+
+    override suspend fun getDueCards(deckName: String?, limit: Int): List<AnkiCardInfo> = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val args = mutableListOf(limit.coerceIn(1, 100).toString())
+            var selection = "limit=?"
+            deckName?.trim()?.takeIf { it.isNotEmpty() }?.let { name ->
+                val deckId = deckList()[name.lowercase()] ?: return@withContext emptyList()
+                selection += ", deckID=?"
+                args.add(deckId.toString())
+            }
+            val result = mutableListOf<AnkiCardInfo>()
+            appContext.contentResolver.query(
+                FlashCardsContract.ReviewInfo.CONTENT_URI,
+                null,
+                selection,
+                args.toTypedArray(),
+                null
+            )?.use { cursor ->
+                val noteIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.ReviewInfo.NOTE_ID)
+                val ordIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.ReviewInfo.CARD_ORD)
+                while (cursor.moveToNext()) {
+                    readCardInfoByNoteOrd(cursor.getLong(noteIdx), cursor.getInt(ordIdx))?.let { result.add(it) }
+                }
+            }
+            result
+        }
+    }
+
+    override suspend fun presentCard(cardId: Long): AnkiCardInfo? = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            readCardInfo(cardId)
+        }
+    }
+
+    override suspend fun changeDeck(cardIds: List<Long>, deckName: String): Int = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val deck = ensureDeck(deckName)
+            var updated = 0
+            cardIds.take(100).forEach { cardId ->
+                val uri = Uri.withAppendedPath(FlashCardsContract.Card.CONTENT_URI, cardId.toString())
+                val values = ContentValues().apply {
+                    put(FlashCardsContract.Card.DECK_ID, deck.id)
+                }
+                if (appContext.contentResolver.update(uri, values, null, null) > 0) updated++
+            }
+            if (updated > 0) notifyAnkiChanged()
+            updated
+        }
+    }
+
+    override suspend fun rateCard(cardId: Long, rating: Int, timeTakenMs: Long): Boolean = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            if (rating !in 1..4) throw IllegalArgumentException("rating must be 1..4")
+            val card = readCardInfo(cardId) ?: return@withContext false
+            val values = ContentValues().apply {
+                put(FlashCardsContract.ReviewInfo.NOTE_ID, card.noteId)
+                put(FlashCardsContract.ReviewInfo.CARD_ORD, card.ord)
+                put(FlashCardsContract.ReviewInfo.EASE, rating)
+                put(FlashCardsContract.ReviewInfo.TIME_TAKEN, timeTakenMs.coerceAtLeast(0L))
+            }
+            val updated = appContext.contentResolver.update(
+                FlashCardsContract.ReviewInfo.CONTENT_URI,
+                values,
+                null,
+                null
+            )
+            if (updated > 0) notifyAnkiChanged()
+            updated > 0
+        }
+    }
+
     private suspend fun doAddGenericNotes(request: AddGenericNotesRequest): BatchAddGenericResult =
         withContext(Dispatchers.IO) {
             ensureAvailable()
@@ -608,6 +733,80 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
             if (updatedCount > 0) notifyAnkiChanged()
             updatedCount
         }
+
+    private fun readCardInfo(cardId: Long): AnkiCardInfo? {
+        val uri = Uri.withAppendedPath(FlashCardsContract.Card.CONTENT_URI, cardId.toString())
+        return appContext.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) return@use null
+            cursor.toCardInfo()
+        }
+    }
+
+    private fun readCardInfoByNoteOrd(noteId: Long, ord: Int): AnkiCardInfo? {
+        val noteUri = Uri.withAppendedPath(FlashCardsContract.Note.CONTENT_URI, noteId.toString())
+        val cardsUri = Uri.withAppendedPath(noteUri, "cards")
+        val cardUri = Uri.withAppendedPath(cardsUri, ord.toString())
+        return appContext.contentResolver.query(cardUri, null, null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) return@use null
+            cursor.toCardInfo()
+        }
+    }
+
+    private fun android.database.Cursor.toCardInfo(): AnkiCardInfo? {
+        val idIdx = getColumnIndex(FlashCardsContract.Card._ID)
+        val noteIdx = getColumnIndex(FlashCardsContract.Card.NOTE_ID)
+        val ordIdx = getColumnIndex(FlashCardsContract.Card.CARD_ORD)
+        val deckIdx = getColumnIndex(FlashCardsContract.Card.DECK_ID)
+        if (idIdx < 0 || noteIdx < 0 || ordIdx < 0 || deckIdx < 0) return null
+        val deckId = getLong(deckIdx)
+        return AnkiCardInfo(
+            id = getLong(idIdx),
+            noteId = getLong(noteIdx),
+            ord = getInt(ordIdx),
+            deckId = deckId,
+            deckName = deckList().entries.firstOrNull { it.value == deckId }?.key.orEmpty(),
+            cardName = getOptionalString(FlashCardsContract.Card.CARD_NAME).orEmpty(),
+            question = getOptionalString(FlashCardsContract.Card.QUESTION).orEmpty(),
+            answer = getOptionalString(FlashCardsContract.Card.ANSWER).orEmpty(),
+            questionSimple = getOptionalString(FlashCardsContract.Card.QUESTION_SIMPLE).orEmpty(),
+            answerSimple = getOptionalString(FlashCardsContract.Card.ANSWER_SIMPLE).orEmpty(),
+            answerPure = getOptionalString(FlashCardsContract.Card.ANSWER_PURE).orEmpty(),
+            type = getOptionalInt(FlashCardsContract.Card.TYPE),
+            queue = getOptionalInt(FlashCardsContract.Card.RAW_QUEUE),
+            due = getOptionalLong(FlashCardsContract.Card.RAW_DUE),
+            interval = getOptionalInt(FlashCardsContract.Card.INTERVAL),
+            easeFactor = getOptionalInt(FlashCardsContract.Card.RAW_SM2_FACTOR),
+            reps = getOptionalInt(FlashCardsContract.Card.REPS),
+            lapses = getOptionalInt(FlashCardsContract.Card.LAPSES)
+        )
+    }
+
+    private fun android.database.Cursor.getOptionalString(column: String): String? {
+        val idx = getColumnIndex(column)
+        return if (idx >= 0 && !isNull(idx)) getString(idx) else null
+    }
+
+    private fun android.database.Cursor.getOptionalInt(column: String): Int? {
+        val idx = getColumnIndex(column)
+        return if (idx >= 0 && !isNull(idx)) getInt(idx) else null
+    }
+
+    private fun android.database.Cursor.getOptionalLong(column: String): Long? {
+        val idx = getColumnIndex(column)
+        return if (idx >= 0 && !isNull(idx)) getLong(idx) else null
+    }
+
+    private fun matchesCardState(card: AnkiCardInfo, state: String?): Boolean {
+        return when (state?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }) {
+            null -> true
+            "new" -> card.queue == 0
+            "learning" -> card.queue == 1 || card.queue == 3
+            "due", "review" -> card.queue == 2
+            "suspended" -> card.queue == -1
+            "buried" -> card.queue == -2 || card.queue == -3
+            else -> true
+        }
+    }
 
     private fun parseTags(raw: String?): List<String> =
         raw.orEmpty().split(" ").map { it.trim() }.filter { it.isNotBlank() }.distinct()

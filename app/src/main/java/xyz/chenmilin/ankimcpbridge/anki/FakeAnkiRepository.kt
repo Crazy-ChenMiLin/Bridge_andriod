@@ -408,6 +408,84 @@ class FakeAnkiRepository : AnkiRepository {
         return updated
     }
 
+    override suspend fun replaceTags(noteIds: List<Long>, tagToReplace: String, replaceWithTag: String): Int {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        val from = tagToReplace.trim()
+        val to = replaceWithTag.trim()
+        if (from.isEmpty() || to.isEmpty() || from.contains(" ") || to.contains(" ")) {
+            throw IllegalArgumentException("tagToReplace/replaceWithTag must be single non-empty tags")
+        }
+        var updated = 0
+        noteIds.forEach { id ->
+            val index = notes.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                val note = notes[index]
+                if (note.tags.contains(from)) {
+                    notes[index] = note.copy(tags = note.tags.map { if (it == from) to else it }.distinct())
+                    updated++
+                }
+            }
+        }
+        return updated
+    }
+
+    override suspend fun getCards(deckName: String?, cardState: String?, limit: Int): List<AnkiCardInfo> {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        val normalizedDeck = deckName?.trim()?.takeIf { it.isNotEmpty() }
+        return notes.asSequence()
+            .filter { note ->
+                normalizedDeck == null || decks.firstOrNull { it.id == note.deckId }?.name.equals(normalizedDeck, ignoreCase = true)
+            }
+            .flatMap { note -> cardsForNote(note).asSequence() }
+            .filter { card ->
+                when (cardState) {
+                    null -> true
+                    "new" -> card.queue == 0
+                    "learning" -> card.queue == 1 || card.queue == 3
+                    "due", "review" -> card.queue == 2
+                    "suspended" -> card.queue == -1
+                    "buried" -> card.queue == -2 || card.queue == -3
+                    else -> true
+                }
+            }
+            .take(limit.coerceIn(1, 500))
+            .toList()
+    }
+
+    override suspend fun getDueCards(deckName: String?, limit: Int): List<AnkiCardInfo> =
+        getCards(deckName = deckName, cardState = "due", limit = limit)
+
+    override suspend fun presentCard(cardId: Long): AnkiCardInfo? {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        return notes.asSequence().flatMap { cardsForNote(it).asSequence() }.firstOrNull { it.id == cardId }
+    }
+
+    override suspend fun changeDeck(cardIds: List<Long>, deckName: String): Int {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        val deck = ensureDeck(deckName)
+        var updated = 0
+        cardIds.forEach { cardId ->
+            val noteId = cardId / 10
+            val index = notes.indexOfFirst { it.id == noteId }
+            if (index >= 0) {
+                notes[index] = notes[index].copy(deckId = deck.id)
+                updated++
+            }
+        }
+        return updated
+    }
+
+    override suspend fun rateCard(cardId: Long, rating: Int, timeTakenMs: Long): Boolean {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        if (rating !in 1..4) throw IllegalArgumentException("rating must be 1..4")
+        return presentCard(cardId) != null
+    }
+
     // ── 测试辅助 ──
 
     /** 注入一个自定义笔记类型（测试用）。返回其 ID，默认 1 个模板。 */
@@ -417,6 +495,32 @@ class FakeAnkiRepository : AnkiRepository {
 
     /** 当前内存中的笔记总数（用于断言）。 */
     fun noteCount(): Int = notes.size
+
+    private fun cardsForNote(note: FakeNote): List<AnkiCardInfo> {
+        val noteType = noteTypes.firstOrNull { it.id == note.noteTypeId } ?: return emptyList()
+        val deckName = decks.firstOrNull { it.id == note.deckId }?.name.orEmpty()
+        val cardCount = noteType.cardTemplateCount.coerceAtLeast(1)
+        val front = note.fields.values.firstOrNull().orEmpty()
+        val back = note.fields.values.drop(1).firstOrNull().orEmpty()
+        return (0 until cardCount).map { ord ->
+            AnkiCardInfo(
+                id = note.id * 10 + ord,
+                noteId = note.id,
+                ord = ord,
+                deckId = note.deckId,
+                deckName = deckName,
+                cardName = "Card ${ord + 1}",
+                question = front,
+                answer = back,
+                questionSimple = front,
+                answerSimple = back,
+                answerPure = back,
+                type = 2,
+                queue = 2,
+                due = 0L
+            )
+        }
+    }
 
     data class FakeNote(
         val id: Long,

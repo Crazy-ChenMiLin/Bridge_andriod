@@ -109,11 +109,13 @@ class McpProtocolTest {
         assertTrue(toolNames.containsAll(
             listOf(
                 "listDecks", "createDeck", "modelNames", "modelFieldNames", "addNote", "addNotes",
-                "findNotes", "notesInfo", "updateNoteFields", "getTags", "addTags", "removeTags"
+                "findNotes", "notesInfo", "updateNoteFields", "getTags", "addTags", "removeTags",
+                "replaceTags", "modelTemplates", "modelStyling",
+                "get_cards", "get_due_cards", "present_card", "changeDeck", "rate_card",
+                "deckStats", "collection_stats"
             )
         ))
         assertFalse("Android 不应暴露 PC GUI 占位工具", toolNames.contains("guiBrowse"))
-        assertFalse("Android 不应暴露 PC 复习占位工具", toolNames.contains("rate_card"))
         assertFalse("Android 不应暴露未实现的模型编辑占位工具", toolNames.contains("createModel"))
     }
 
@@ -253,6 +255,24 @@ class McpProtocolTest {
             fieldsResponse.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
         ).jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("Front", "Back"), fields)
+
+        val templatesResponse = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "modelTemplates",
+                "arguments" to mapOf("modelName" to "Basic")
+            ))
+        ))
+        assertNull(templatesResponse.error)
+        assertFalse(templatesResponse.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+
+        val stylingResponse = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "modelStyling",
+                "arguments" to mapOf("modelName" to "Basic")
+            ))
+        ))
+        assertNull(stylingResponse.error)
+        assertFalse(stylingResponse.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
     }
 
     @Test
@@ -387,6 +407,13 @@ class McpProtocolTest {
         ).jsonArray.map { it.jsonPrimitive.content }
         assertTrue(tagNames.contains("flow-added"))
 
+        parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "replaceTags",
+                "arguments" to mapOf("notes" to listOf(noteId), "tagToReplace" to "flow-added", "replaceWithTag" to "flow-renamed")
+            ))
+        )).also { assertFalse(it.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean) }
+
         val info = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf("name" to "notesInfo", "arguments" to mapOf("notes" to listOf(noteId))))
         ))
@@ -408,9 +435,82 @@ class McpProtocolTest {
         parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(
                 "name" to "removeTags",
-                "arguments" to mapOf("notes" to listOf(noteId), "tags" to "flow-added")
+                "arguments" to mapOf("notes" to listOf(noteId), "tags" to "flow-renamed")
             ))
         )).also { assertFalse(it.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean) }
+    }
+
+    @Test
+    fun `pc compatible card retrieval present change deck and rate flow works`() = runTest {
+        val add = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "deckName" to "PC Cards",
+                    "modelName" to "Basic",
+                    "fields" to mapOf("Front" to "Card front", "Back" to "Card back"),
+                    "allowDuplicate" to true
+                )
+            ))
+        ))
+        val noteId = Json.parseToJsonElement(
+            add.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonPrimitive.long
+        val cardId = noteId * 10
+
+        val cards = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "get_cards",
+                "arguments" to mapOf("deck_name" to "PC Cards", "card_state" to "due", "limit" to 10)
+            ))
+        ))
+        val cardList = Json.parseToJsonElement(
+            cards.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray
+        assertTrue(cardList.any { it.jsonObject["cardId"]!!.jsonPrimitive.long == cardId })
+
+        val presentQuestion = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "present_card",
+                "arguments" to mapOf("card_id" to cardId, "show_answer" to false)
+            ))
+        ))
+        val question = Json.parseToJsonElement(
+            presentQuestion.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals("Card front", question["question"]!!.jsonPrimitive.content)
+        assertFalse(question.containsKey("answer"))
+
+        parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "changeDeck",
+                "arguments" to mapOf("cards" to listOf(cardId), "deck" to "PC Cards Moved")
+            ))
+        )).also { assertFalse(it.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean) }
+
+        val rate = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "rate_card",
+                "arguments" to mapOf("card_id" to cardId, "rating" to 3, "time_taken_ms" to 1200)
+            ))
+        ))
+        assertFalse(rate.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+
+        val stats = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "deckStats",
+                "arguments" to mapOf("deck" to "PC Cards Moved")
+            ))
+        ))
+        val deckStats = Json.parseToJsonElement(
+            stats.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals(1, deckStats["counts"]!!.jsonObject["total"]!!.jsonPrimitive.int)
+
+        val collection = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf("name" to "collection_stats"))
+        ))
+        assertFalse(collection.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
     }
 
     // ─── 业务错误以 isError=true 形式返回（而非 JSON-RPC error） ───

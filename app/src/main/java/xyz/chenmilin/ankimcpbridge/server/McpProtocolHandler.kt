@@ -58,6 +58,16 @@ class McpProtocolHandler(
         toolRegistry.register(PcGetTagsTool(ankiRepository))
         toolRegistry.register(PcAddTagsTool(ankiRepository))
         toolRegistry.register(PcRemoveTagsTool(ankiRepository))
+        toolRegistry.register(PcReplaceTagsTool(ankiRepository))
+        toolRegistry.register(PcModelTemplatesTool(ankiRepository))
+        toolRegistry.register(PcModelStylingTool(ankiRepository))
+        toolRegistry.register(PcGetCardsTool(ankiRepository))
+        toolRegistry.register(PcGetDueCardsTool(ankiRepository))
+        toolRegistry.register(PcPresentCardTool(ankiRepository))
+        toolRegistry.register(PcChangeDeckTool(ankiRepository))
+        toolRegistry.register(PcRateCardTool(ankiRepository))
+        toolRegistry.register(PcDeckStatsTool(ankiRepository))
+        toolRegistry.register(PcCollectionStatsTool(ankiRepository))
     }
 
     fun handleRequest(body: String): String {

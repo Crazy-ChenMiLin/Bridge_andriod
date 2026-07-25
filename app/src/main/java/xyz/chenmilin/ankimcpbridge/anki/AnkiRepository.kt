@@ -22,4 +22,10 @@ interface AnkiRepository {
     suspend fun getTags(pattern: String? = null): List<String>
     suspend fun addTags(noteIds: List<Long>, tags: List<String>): Int
     suspend fun removeTags(noteIds: List<Long>, tags: List<String>): Int
+    suspend fun replaceTags(noteIds: List<Long>, tagToReplace: String, replaceWithTag: String): Int
+    suspend fun getCards(deckName: String? = null, cardState: String? = null, limit: Int = 100): List<AnkiCardInfo>
+    suspend fun getDueCards(deckName: String? = null, limit: Int = 20): List<AnkiCardInfo>
+    suspend fun presentCard(cardId: Long): AnkiCardInfo?
+    suspend fun changeDeck(cardIds: List<Long>, deckName: String): Int
+    suspend fun rateCard(cardId: Long, rating: Int, timeTakenMs: Long = 0L): Boolean
 }

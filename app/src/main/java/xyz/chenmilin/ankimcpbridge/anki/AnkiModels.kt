@@ -122,6 +122,27 @@ data class AnkiNoteInfo(
     val css: String? = null
 )
 
+data class AnkiCardInfo(
+    val id: Long,
+    val noteId: Long,
+    val ord: Int,
+    val deckId: Long,
+    val deckName: String,
+    val cardName: String,
+    val question: String,
+    val answer: String,
+    val questionSimple: String,
+    val answerSimple: String,
+    val answerPure: String,
+    val type: Int? = null,
+    val queue: Int? = null,
+    val due: Long? = null,
+    val interval: Int? = null,
+    val easeFactor: Int? = null,
+    val reps: Int? = null,
+    val lapses: Int? = null
+)
+
 /** 通用写入单张请求：按笔记类型 ID + 字段名/值写入。 */
 data class AddGenericNoteRequest(
     val deck: String,
