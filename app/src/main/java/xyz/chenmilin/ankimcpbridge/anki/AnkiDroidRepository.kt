@@ -100,8 +100,8 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         if (trimmedName.isEmpty()) throw IllegalArgumentException("牌组名称不能为空")
         if (trimmedName.length > 200) throw IllegalArgumentException("牌组名称过长（最多200字符）")
 
-        deckList()[trimmedName.lowercase()]?.let { deckId ->
-            return@withContext AnkiDeck(id = deckId, name = trimmedName, created = false)
+        readDecks().firstOrNull { it.name.equals(trimmedName, ignoreCase = true) }?.let { deck ->
+            return@withContext deck.copy(created = false)
         }
         val deckId = addNewDeck(trimmedName)
             ?: throw DeckOperationException("创建牌组失败: $trimmedName")
