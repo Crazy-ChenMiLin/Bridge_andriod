@@ -28,6 +28,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _permissionRequest = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val permissionRequest: SharedFlow<String> = _permissionRequest.asSharedFlow()
 
+    /** 一次性事件：复制成功后通知 UI 弹出 Snackbar（不携带 Token）。 */
+    private val _copyFeedback = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val copyFeedback: SharedFlow<String> = _copyFeedback.asSharedFlow()
+
     init {
         // 初始加载
         refreshAnkiStatus()
@@ -204,6 +208,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 as android.content.ClipboardManager
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MCP", text))
         logRepo.info("已复制到剪贴板")
+    }
+
+    /**
+     * 复制“可直接粘贴到 RikkaHub 的 Authorization 请求头值”：`Bearer <token>`。
+     * 用户无需手动输入 Bearer / 空格 / 横杠，复制出来即完整值。
+     * 复制后通过 [_copyFeedback] 通知 UI 给出可见反馈（不含 Token）。
+     */
+    fun copyRikkaHubAuthorization() {
+        val authorizationValue = buildAuthorizationValue(tokenManager.token)
+        if (authorizationValue == null) {
+            logRepo.error("复制认证信息失败：Token 为空")
+            return
+        }
+
+        val clipboard = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                as android.content.ClipboardManager
+        clipboard.setPrimaryClip(
+            android.content.ClipData.newPlainText("RikkaHub Authorization", authorizationValue)
+        )
+        logRepo.info("已复制 RikkaHub Authorization 请求头值")
+        _copyFeedback.tryEmit("已复制，可直接粘贴到 RikkaHub")
     }
 
     fun clearLogs() {

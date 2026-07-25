@@ -13,7 +13,8 @@
 - RakaHub 已添加本桥接为 MCP Server：
   - 类型：Streamable HTTP
   - 地址：`http://127.0.0.1:8766/mcp`
-  - 认证：Bearer Token（本 App 内「Bearer Token」卡片里的字符串）
+  - 认证：点击本 App 内「复制到 RikkaHub」按钮，把得到的完整值（已含 `Bearer ` 前缀）
+    直接粘贴到 RakaHub 的「请求头值」中，**不要手动输入 Bearer 或空格**
 - RakaHub 能列出 5 个工具即为连接成功
 
 > 如果 RakaHub 侧显示「健康检查」异常，但 `list_decks` / `add_basic_note` 都能正常调用，
@@ -70,7 +71,7 @@
 
 | 现象 | 原因 | 处理 |
 |------|------|------|
-| RakaHub 连不上 | 服务没启动 / 端口不对 / Token 错 | App 内启动服务，核对地址与 Bearer Token |
+| RakaHub 连不上 | 服务没启动 / 端口不对 / 鉴权值错 | App 内启动服务，核对地址，并用「复制到 RikkaHub」复制 Authorization 值（勿手输 Bearer） |
 | 工具调用报权限错误 | AnkiDroid 未授权 | App 内点「授权 AnkiDroid」并允许 |
 | 卡片没进目标牌组 | 用了批量接口且 AnkiDroid 未返回 noteId | 属已知限制（批量路径）不影响卡片写入；单张接口可精确进组 |
 | RakaHub 显示健康异常但功能正常 | 探针格式不匹配 | 可忽略，不影响生成 |

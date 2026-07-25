@@ -46,6 +46,13 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         )
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        viewModel.copyFeedback.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -55,7 +62,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -172,10 +180,10 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { viewModel.copyToClipboard(state.token) }) {
+                        OutlinedButton(onClick = { viewModel.copyRikkaHubAuthorization() }) {
                             Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("复制 Token")
+                            Text("复制到 RikkaHub")
                         }
                         OutlinedButton(
                             onClick = { viewModel.regenerateToken() },
@@ -188,6 +196,12 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                             Text("重新生成")
                         }
                     }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "已自动包含 Bearer 前缀，复制后直接粘贴到 RikkaHub 的“请求头值”中。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 

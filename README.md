@@ -103,11 +103,13 @@ AnkiDroid ContentProvider
 
 **自定义请求头**：
 
-| 名称 | 内容 |
+| 名称 | 值 |
 |------|------|
-| Authorization | `Bearer 你的Token` |
+| Authorization | 点击 App 首页「复制到 RikkaHub」后**直接粘贴**的内容 |
 
-Token 在 App 首页的「Bearer Token」卡片中查看和复制。
+> **不要手动输入 `Bearer` / 空格 / 横杠。** App 的「复制到 RikkaHub」按钮会一次性把
+> `Bearer <token>` 拼好并写入剪贴板，你只需要在 RakaHub 的「请求头值」里长按粘贴即可。
+> Token 本身在 App 首页「Bearer Token」卡片中查看；重新生成 Token 后请重新点击复制。
 
 ## 测试提示词
 
