@@ -17,6 +17,7 @@ interface AnkiRepository {
     // PC Anki MCP compatible capabilities available through AnkiDroid ContentProvider.
     suspend fun findNotes(query: String): List<Long>
     suspend fun notesInfo(noteIds: List<Long>): List<AnkiNoteInfo>
+    suspend fun findDuplicateNotes(noteTypeId: Long, firstFieldValue: String): List<Long>
     suspend fun updateNoteFields(noteId: Long, fields: Map<String, String>): Boolean
     suspend fun getTags(pattern: String? = null): List<String>
     suspend fun addTags(noteIds: List<Long>, tags: List<String>): Int

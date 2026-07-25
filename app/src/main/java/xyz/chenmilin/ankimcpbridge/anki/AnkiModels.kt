@@ -118,7 +118,8 @@ data class AnkiNoteInfo(
     val noteTypeId: Long,
     val modelName: String,
     val fields: Map<String, String>,
-    val tags: List<String>
+    val tags: List<String>,
+    val css: String? = null
 )
 
 /** 通用写入单张请求：按笔记类型 ID + 字段名/值写入。 */

@@ -353,6 +353,36 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         }
     }
 
+    override suspend fun findDuplicateNotes(noteTypeId: Long, firstFieldValue: String): List<Long> = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val firstField = firstFieldValue.trim()
+            if (noteTypeId <= 0 || firstField.isEmpty()) return@withContext emptyList()
+            val result = mutableListOf<Long>()
+            appContext.contentResolver.query(
+                FlashCardsContract.Note.CONTENT_URI,
+                arrayOf(FlashCardsContract.Note._ID, FlashCardsContract.Note.MID, FlashCardsContract.Note.FLDS),
+                "${FlashCardsContract.Note.MID} = ?",
+                arrayOf(noteTypeId.toString()),
+                null
+            )?.use { cursor ->
+                val idIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.Note._ID)
+                val fldsIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.Note.FLDS)
+                while (cursor.moveToNext() && result.size < 100) {
+                    val storedFirst = (cursor.getString(fldsIdx) ?: "")
+                        .split(FIELD_SEPARATOR, limit = 2)
+                        .firstOrNull()
+                        ?.trim()
+                        .orEmpty()
+                    if (storedFirst == firstField) {
+                        result.add(cursor.getLong(idIdx))
+                    }
+                }
+            }
+            result
+        }
+    }
+
     override suspend fun updateNoteFields(noteId: Long, fields: Map<String, String>): Boolean = withAnkiRetry {
         withContext(Dispatchers.IO) {
             ensureAvailable()
@@ -547,7 +577,8 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                 noteTypeId = mid,
                 modelName = detail?.name.orEmpty(),
                 fields = fields,
-                tags = parseTags(cursor.getString(tagsIdx))
+                tags = parseTags(cursor.getString(tagsIdx)),
+                css = detail?.css
             )
         }
     }

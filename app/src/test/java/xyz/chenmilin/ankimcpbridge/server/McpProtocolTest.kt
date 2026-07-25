@@ -270,12 +270,10 @@ class McpProtocolTest {
         ))
         assertNull(response.error)
         assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
-        val result = Json.parseToJsonElement(
+        val noteId = Json.parseToJsonElement(
             response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
-        ).jsonObject
-        assertTrue(result["success"]!!.jsonPrimitive.boolean)
-        assertEquals("PC Alias", result["deck"]!!.jsonPrimitive.content)
-        assertEquals("Basic", result["modelName"]!!.jsonPrimitive.content)
+        ).jsonPrimitive.long
+        assertTrue(noteId > 0)
     }
 
     @Test
@@ -296,12 +294,57 @@ class McpProtocolTest {
         ))
         assertNull(response.error)
         assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
-        val result = Json.parseToJsonElement(
+        val noteIds = Json.parseToJsonElement(
             response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
-        ).jsonObject
-        assertEquals(2, result["requested"]!!.jsonPrimitive.int)
-        assertEquals(2, result["succeeded"]!!.jsonPrimitive.int)
-        assertEquals(0, result["failed"]!!.jsonPrimitive.int)
+        ).jsonArray
+        assertEquals(2, noteIds.size)
+        assertTrue(noteIds.all { it.jsonPrimitive.long > 0 })
+    }
+
+    @Test
+    fun `pc compatible addNote skips duplicates unless explicitly allowed`() = runTest {
+        val first = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "deckName" to "PC Duplicates",
+                    "modelName" to "Basic",
+                    "fields" to mapOf("Front" to "Same front", "Back" to "A")
+                )
+            ))
+        ))
+        assertTrue(Json.parseToJsonElement(
+            first.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonPrimitive.long > 0)
+
+        val duplicate = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "deckName" to "PC Duplicates",
+                    "modelName" to "Basic",
+                    "fields" to mapOf("Front" to "Same front", "Back" to "B")
+                )
+            ))
+        ))
+        assertTrue(Json.parseToJsonElement(
+            duplicate.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ) is kotlinx.serialization.json.JsonNull)
+
+        val allowed = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "deckName" to "PC Duplicates",
+                    "modelName" to "Basic",
+                    "fields" to mapOf("Front" to "Same front", "Back" to "C"),
+                    "allowDuplicate" to true
+                )
+            ))
+        ))
+        assertTrue(Json.parseToJsonElement(
+            allowed.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonPrimitive.long > 0)
     }
 
     @Test
@@ -319,7 +362,7 @@ class McpProtocolTest {
         ))
         val noteId = Json.parseToJsonElement(
             add.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
-        ).jsonObject["noteId"]!!.jsonPrimitive.long
+        ).jsonPrimitive.long
 
         val find = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf("name" to "findNotes", "arguments" to mapOf("query" to "Original front")))
@@ -351,7 +394,8 @@ class McpProtocolTest {
             info.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
         ).jsonArray[0].jsonObject
         assertEquals("Basic", noteInfo["modelName"]!!.jsonPrimitive.content)
-        assertEquals("Original front", noteInfo["fields"]!!.jsonObject["Front"]!!.jsonPrimitive.content)
+        assertEquals("Original front", noteInfo["fields"]!!.jsonObject["Front"]!!.jsonObject["value"]!!.jsonPrimitive.content)
+        assertEquals(0, noteInfo["fields"]!!.jsonObject["Front"]!!.jsonObject["order"]!!.jsonPrimitive.int)
 
         val update = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(

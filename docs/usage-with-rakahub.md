@@ -48,20 +48,22 @@
 | `createDeck` | 创建/确保牌组存在 |
 | `modelNames` | 列出笔记类型名称 |
 | `modelFieldNames` | 按 `modelName` 获取字段名 |
-| `addNote` | 按 `deckName` + `modelName` + `fields` 写入单条笔记 |
-| `addNotes` | 按同一个 `deckName` + `modelName` 批量写入 ≤100 条 |
+| `addNote` | 按 `deckName` + `modelName` + `fields` 写入单条笔记；成功返回 noteId，重复返回 `null` |
+| `addNotes` | 按同一个 `deckName` + `modelName` 批量写入 ≤100 条；返回 noteId/`null` 数组 |
 | `findNotes` | 使用 Anki 搜索语法查找 noteId |
-| `notesInfo` | 查询 note 的字段、标签、笔记类型 |
+| `notesInfo` | 查询 note 的字段、标签、笔记类型；字段形状为 `fields.字段名.value/order` |
 | `updateNoteFields` | 更新已有 note 的字段 |
 | `getTags` | 列出/过滤标签 |
 | `addTags` | 给 note 增加标签 |
 | `removeTags` | 从 note 移除标签 |
 
+`addNote` / `addNotes` 默认做 collection 级重复检测（按该笔记类型首字段精确匹配）。如确实要允许重复，可传 `allowDuplicate=true`。安卓版不支持 PC 端更细的 `duplicateScopeOptions`。
+
 ### 安卓端不暴露的 PC 专属能力
 
 以下能力依赖电脑端 Anki GUI、AnkiConnect 模型编辑/媒体/复习接口，或 AnkiDroid 公开 API 未暴露的低层能力，因此安卓版不放进 `tools/list`：
 
-`guiAddCards`、`guiBrowse`、`guiCurrentCard`、`guiSelectedNotes`、`guiEditNote`、`guiUndo`、`guiSelectCard`、`guiDeckOverview`、`guiDeckBrowser`、`get_cards`、`get_due_cards`、`present_card`、`rate_card`、`changeDeck`、`deckStats`、`collection_stats`、`deleteNotes`、`createModel`、`addModelField`、`renameModelField`、`removeModelField`、`repositionModelField`、`modelTemplates`、`updateModelTemplates`、`modelStyling`、`updateModelStyling`、`deleteMediaFile`。
+`guiAddCards`、`guiBrowse`、`guiCurrentCard`、`guiSelectedNotes`、`guiEditNote`、`guiUndo`、`guiSelectCard`、`guiDeckOverview`、`guiDeckBrowser`、`guiShowAnswer`、`guiShowQuestion`、`sync`、`get_cards`、`get_due_cards`、`present_card`、`rate_card`、`changeDeck`、`deckStats`、`collection_stats`、`review_stats`、`deleteNotes`、`createModel`、`addModelField`、`renameModelField`、`removeModelField`、`repositionModelField`、`modelTemplates`、`updateModelTemplates`、`modelStyling`、`updateModelStyling`、`storeMediaFile`、`getMediaFilesNames`、`retrieveMediaFile`、`deleteMediaFile`、`replaceTags`、`clearUnusedTags`。
 
 ---
 

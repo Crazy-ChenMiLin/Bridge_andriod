@@ -329,9 +329,24 @@ class FakeAnkiRepository : AnkiRepository {
                 noteTypeId = note.noteTypeId,
                 modelName = noteType.name,
                 fields = note.fields,
-                tags = note.tags
+                tags = note.tags,
+                css = null
             )
         }
+    }
+
+    override suspend fun findDuplicateNotes(noteTypeId: Long, firstFieldValue: String): List<Long> {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        val noteType = noteTypes.firstOrNull { it.id == noteTypeId }
+            ?: throw ModelNotFoundException("笔记类型不存在: $noteTypeId")
+        val firstField = noteType.fields.firstOrNull() ?: return emptyList()
+        val normalized = firstFieldValue.trim()
+        if (normalized.isEmpty()) return emptyList()
+        return notes.filter { note ->
+            note.noteTypeId == noteTypeId &&
+                note.fields[firstField]?.trim()?.equals(normalized, ignoreCase = false) == true
+        }.map { it.id }
     }
 
     override suspend fun updateNoteFields(noteId: Long, fields: Map<String, String>): Boolean {
