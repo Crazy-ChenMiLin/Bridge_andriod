@@ -67,7 +67,9 @@
 | `deckStats` | 读取单个牌组的安卓端基础卡片计数 |
 | `collection_stats` | 汇总全库安卓端基础卡片计数 |
 
-`addNote` / `addNotes` 默认做 collection 级重复检测（按该笔记类型首字段精确匹配）。如确实要允许重复，可传 `allowDuplicate=true`。安卓版不支持 PC 端更细的 `duplicateScopeOptions`。
+`addNote` / `addNotes` 默认做 collection 级重复检测（按该笔记类型首字段精确匹配）。如确实要允许重复，可传 `allowDuplicate=true`，也兼容 PC 常见的 `options.allowDuplicate=true`。安卓版不支持 PC 端更细的 `duplicateScopeOptions`。
+
+如果 PC 客户端在 `addNote` / `addNotes` 里传 `audio`、`picture`、`video`，安卓版会直接返回“不支持媒体附件”的错误，不会静默忽略后写入一张缺媒体的卡。
 
 ### 安卓端不暴露的 PC 专属能力
 

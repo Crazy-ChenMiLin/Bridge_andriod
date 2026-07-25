@@ -403,6 +403,63 @@ class McpProtocolTest {
     }
 
     @Test
+    fun `pc compatible addNote accepts wrapped note options and snake case names`() = runTest {
+        parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "note" to mapOf(
+                        "deck_name" to "PC Wrapped",
+                        "model_name" to "Basic",
+                        "fields" to mapOf("Front" to "Wrapped front", "Back" to "A")
+                    )
+                )
+            ))
+        )).also { assertFalse(it.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean) }
+
+        val duplicateAllowed = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "note" to mapOf(
+                        "deck_name" to "PC Wrapped",
+                        "model_name" to "Basic",
+                        "fields" to mapOf("Front" to "Wrapped front", "Back" to "B"),
+                        "options" to mapOf("allowDuplicate" to true)
+                    )
+                )
+            ))
+        ))
+        assertFalse(duplicateAllowed.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        assertTrue(Json.parseToJsonElement(
+            duplicateAllowed.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonPrimitive.long > 0)
+    }
+
+    @Test
+    fun `pc compatible addNote rejects unsupported media attachments`() = runTest {
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "note" to mapOf(
+                        "deckName" to "PC Media",
+                        "modelName" to "Basic",
+                        "fields" to mapOf("Front" to "Media front", "Back" to "A"),
+                        "audio" to listOf(mapOf("url" to "https://example.com/a.mp3"))
+                    )
+                )
+            ))
+        ))
+        assertNull(response.error)
+        assertTrue(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val error = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals(BusinessErrorCodes.INVALID_ARGUMENT, error["code"]!!.jsonPrimitive.content)
+    }
+
+    @Test
     fun `pc compatible note search info tag and update flow works`() = runTest {
         val add = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(

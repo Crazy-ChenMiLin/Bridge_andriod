@@ -63,6 +63,15 @@ private suspend fun findNoteTypeByName(ankiRepository: AnkiRepository, modelName
 private fun JsonObject.stringList(name: String): List<String> =
     this[name]?.jsonArray?.mapNotNull { it.jsonPrimitive.content.trim().takeIf { s -> s.isNotBlank() } } ?: emptyList()
 
+private fun JsonObject.stringValue(vararg names: String): String? =
+    names.firstNotNullOfOrNull { name -> this[name]?.jsonPrimitive?.content }
+
+private fun JsonObject.booleanValue(vararg names: String): Boolean? =
+    names.firstNotNullOfOrNull { name -> this[name]?.jsonPrimitive?.booleanOrNull }
+
+private fun JsonObject.unsupportedAttachmentNames(): List<String> =
+    listOf("audio", "picture", "video").filter { this[it] != null }
+
 private fun jsonLongOrNull(value: Long?): JsonElement =
     value?.let { JsonPrimitive(it) } ?: JsonNull
 
@@ -117,17 +126,26 @@ private suspend fun duplicateNoteIdOrNull(
     fields: Map<String, String>,
     options: JsonObject
 ): Long? {
-    val allowDuplicate = options["allowDuplicate"]?.jsonPrimitive?.booleanOrNull ?: false
+    val nestedOptions = options["options"] as? JsonObject
+    val allowDuplicate = options.booleanValue("allowDuplicate", "allow_duplicate")
+        ?: nestedOptions?.booleanValue("allowDuplicate", "allow_duplicate")
+        ?: false
     if (allowDuplicate) return null
 
-    val duplicateScope = options["duplicateScope"]?.jsonPrimitive?.content
+    val duplicateScope = options.stringValue("duplicateScope", "duplicate_scope")
+        ?: nestedOptions?.stringValue("duplicateScope", "duplicate_scope")
     if (duplicateScope != null && duplicateScope != "collection") {
         throw ToolErrorException(
             BusinessErrorCodes.INVALID_ARGUMENT,
             "安卓版 PC 兼容接口只支持 collection 级重复检测；duplicateScope=$duplicateScope 不支持"
         )
     }
-    if (options["duplicateScopeOptions"] != null) {
+    if (
+        options["duplicateScopeOptions"] != null ||
+        options["duplicate_scope_options"] != null ||
+        nestedOptions?.get("duplicateScopeOptions") != null ||
+        nestedOptions?.get("duplicate_scope_options") != null
+    ) {
         throw ToolErrorException(
             BusinessErrorCodes.INVALID_ARGUMENT,
             "安卓版 PC 兼容接口不支持 duplicateScopeOptions"
@@ -261,7 +279,10 @@ class PcAddNoteTool(private val ankiRepository: AnkiRepository) : McpTool {
                 "properties" to JsonObject(
                     mapOf(
                         "deckName" to JsonObject(mapOf("type" to JsonPrimitive("string"), "minLength" to JsonPrimitive(1))),
+                        "deck_name" to JsonObject(mapOf("type" to JsonPrimitive("string"), "minLength" to JsonPrimitive(1))),
                         "modelName" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "model_name" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "note" to JsonObject(mapOf("type" to JsonPrimitive("object"))),
                         "fields" to JsonObject(mapOf("type" to JsonPrimitive("object"))),
                         "tags" to JsonObject(mapOf("type" to JsonPrimitive("array"), "items" to JsonObject(mapOf("type" to JsonPrimitive("string"))))),
                         "allowDuplicate" to JsonObject(mapOf("type" to JsonPrimitive("boolean"))),
@@ -273,7 +294,7 @@ class PcAddNoteTool(private val ankiRepository: AnkiRepository) : McpTool {
                         )
                     )
                 ),
-                "required" to JsonArray(listOf(JsonPrimitive("deckName"), JsonPrimitive("modelName"), JsonPrimitive("fields")))
+                "required" to JsonArray(emptyList())
             )
         )
     )
@@ -281,11 +302,18 @@ class PcAddNoteTool(private val ankiRepository: AnkiRepository) : McpTool {
     override suspend fun call(arguments: JsonObject?): McpToolCallResult {
         val noteArgs = arguments?.get("note")?.jsonObject ?: arguments
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数")
-        val deckName = noteArgs["deckName"]?.jsonPrimitive?.content
+        val deckName = noteArgs.stringValue("deckName", "deck_name")
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: deckName")
         if (deckName.isBlank()) return pcBusinessError(BusinessErrorCodes.DECK_NAME_EMPTY, "deckName 不能为空")
-        val modelName = noteArgs["modelName"]?.jsonPrimitive?.content
+        val modelName = noteArgs.stringValue("modelName", "model_name")
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: modelName")
+        val attachments = noteArgs.unsupportedAttachmentNames()
+        if (attachments.isNotEmpty()) {
+            return pcBusinessError(
+                BusinessErrorCodes.INVALID_ARGUMENT,
+                "安卓版 addNote 不支持媒体附件字段: ${attachments.joinToString(", ")}"
+            )
+        }
         val fields = noteArgs["fields"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content }
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: fields")
         val tags = noteArgs.stringList("tags")
@@ -315,7 +343,9 @@ class PcAddNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
                 "properties" to JsonObject(
                     mapOf(
                         "deckName" to JsonObject(mapOf("type" to JsonPrimitive("string"), "minLength" to JsonPrimitive(1))),
+                        "deck_name" to JsonObject(mapOf("type" to JsonPrimitive("string"), "minLength" to JsonPrimitive(1))),
                         "modelName" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "model_name" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
                         "notes" to JsonObject(mapOf("type" to JsonPrimitive("array"))),
                         "tags" to JsonObject(mapOf("type" to JsonPrimitive("array"), "items" to JsonObject(mapOf("type" to JsonPrimitive("string"))))),
                         "allowDuplicate" to JsonObject(mapOf("type" to JsonPrimitive("boolean"))),
@@ -334,8 +364,8 @@ class PcAddNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult {
         val args = arguments ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数")
-        val sharedDeckName = args["deckName"]?.jsonPrimitive?.content
-        val sharedModelName = args["modelName"]?.jsonPrimitive?.content
+        val sharedDeckName = args.stringValue("deckName", "deck_name")
+        val sharedModelName = args.stringValue("modelName", "model_name")
         val notesArray = args["notes"]?.jsonArray
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: notes")
         if (notesArray.isEmpty()) return pcBusinessError(BusinessErrorCodes.INVALID_ARGUMENT, "notes 不能为空")
@@ -344,12 +374,19 @@ class PcAddNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
         return try {
             val noteIds = notesArray.mapIndexed { index, element ->
                 val obj = element.jsonObject
-                val deckName = obj["deckName"]?.jsonPrimitive?.content ?: sharedDeckName
+                val attachments = obj.unsupportedAttachmentNames()
+                if (attachments.isNotEmpty()) {
+                    throw ToolErrorException(
+                        BusinessErrorCodes.INVALID_ARGUMENT,
+                        "安卓版 addNotes 不支持 notes[$index] 的媒体附件字段: ${attachments.joinToString(", ")}"
+                    )
+                }
+                val deckName = obj.stringValue("deckName", "deck_name") ?: sharedDeckName
                     ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: notes[$index].deckName")
                 if (deckName.isBlank()) {
                     throw ToolErrorException(BusinessErrorCodes.DECK_NAME_EMPTY, "notes[$index].deckName 不能为空")
                 }
-                val modelName = obj["modelName"]?.jsonPrimitive?.content ?: sharedModelName
+                val modelName = obj.stringValue("modelName", "model_name") ?: sharedModelName
                     ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: notes[$index].modelName")
                 val noteType = findNoteTypeByName(ankiRepository, modelName)
                 val fields = obj["fields"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content }
