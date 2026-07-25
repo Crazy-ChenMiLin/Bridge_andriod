@@ -111,6 +111,7 @@ class McpProtocolTest {
                 "listDecks", "deckNames", "deckNamesAndIds", "createDeck",
                 "modelNames", "modelNamesAndIds", "modelFieldNames", "addNote", "addNotes",
                 "findNotes", "findCards", "notesInfo", "cardsInfo", "cardsToNotes",
+                "getDecks", "suspend", "areSuspended", "areDue", "getIntervals",
                 "updateNoteFields", "getTags", "addTags", "removeTags",
                 "replaceTags", "modelTemplates", "modelStyling",
                 "get_cards", "get_due_cards", "present_card", "changeDeck", "rate_card",
@@ -702,6 +703,65 @@ class McpProtocolTest {
             cardsToNotes.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
         ).jsonArray.map { it.jsonPrimitive.long }
         assertEquals(listOf(noteId), mappedNoteIds)
+
+        val mappedDecks = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "getDecks",
+                "arguments" to mapOf("cards" to listOf(cardId))
+            ))
+        ))
+        val deckMap = Json.parseToJsonElement(
+            mappedDecks.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals(cardId, deckMap["PC Cards"]!!.jsonArray[0].jsonPrimitive.long)
+
+        val dueBeforeSuspend = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "areDue",
+                "arguments" to mapOf("cards" to listOf(cardId))
+            ))
+        ))
+        assertTrue(Json.parseToJsonElement(
+            dueBeforeSuspend.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray[0].jsonPrimitive.boolean)
+
+        val intervals = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "getIntervals",
+                "arguments" to mapOf("cards" to listOf(cardId))
+            ))
+        ))
+        assertEquals(1, Json.parseToJsonElement(
+            intervals.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray[0].jsonPrimitive.int)
+
+        val completeIntervals = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "getIntervals",
+                "arguments" to mapOf("cards" to listOf(cardId), "complete" to true)
+            ))
+        ))
+        assertTrue(completeIntervals.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+
+        val suspend = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "suspend",
+                "arguments" to mapOf("cards" to listOf(cardId))
+            ))
+        ))
+        assertTrue(Json.parseToJsonElement(
+            suspend.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonPrimitive.boolean)
+
+        val suspended = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "areSuspended",
+                "arguments" to mapOf("cards" to listOf(cardId))
+            ))
+        ))
+        assertTrue(Json.parseToJsonElement(
+            suspended.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray[0].jsonPrimitive.boolean)
 
         val presentQuestion = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(

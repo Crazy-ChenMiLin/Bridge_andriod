@@ -622,8 +622,146 @@ class PcCardsToNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
         val cardIds = arguments?.get("cards")?.jsonArray?.mapNotNull { it.jsonPrimitive.content.toLongOrNull() }
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: cards")
         return try {
-            val noteIds = cardIds.mapNotNull { ankiRepository.presentCard(it)?.noteId }
+            val noteIds = cardIds.mapNotNull { ankiRepository.presentCard(it)?.noteId }.distinct()
             McpToolCallResult(listOf(McpToolContent(text = JsonArray(noteIds.map { JsonPrimitive(it) }).toString())))
+        } catch (e: Exception) {
+            pcExceptionError(e)
+        }
+    }
+}
+
+class PcGetDecksTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "getDecks",
+        description = "AnkiConnect compatible alias: group the provided card ids by deck name.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(mapOf("cards" to JsonObject(mapOf("type" to JsonPrimitive("array"))))),
+                "required" to JsonArray(listOf(JsonPrimitive("cards")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val cardIds = arguments?.get("cards")?.jsonArray?.mapNotNull { it.jsonPrimitive.content.toLongOrNull() }
+            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: cards")
+        return try {
+            val byDeck = mutableMapOf<String, MutableList<JsonElement>>()
+            cardIds.forEach { cardId ->
+                val card = ankiRepository.presentCard(cardId) ?: return@forEach
+                byDeck.getOrPut(card.deckName) { mutableListOf() }.add(JsonPrimitive(card.id))
+            }
+            val json = JsonObject(byDeck.mapValues { JsonArray(it.value) })
+            McpToolCallResult(listOf(McpToolContent(text = json.toString())))
+        } catch (e: Exception) {
+            pcExceptionError(e)
+        }
+    }
+}
+
+class PcSuspendTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "suspend",
+        description = "AnkiConnect compatible alias: suspend cards by card id. Android cannot unsuspend through the public API.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(mapOf("cards" to JsonObject(mapOf("type" to JsonPrimitive("array"))))),
+                "required" to JsonArray(listOf(JsonPrimitive("cards")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val cardIds = arguments?.get("cards")?.jsonArray?.mapNotNull { it.jsonPrimitive.content.toLongOrNull() }
+            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: cards")
+        return try {
+            val updated = ankiRepository.suspendCards(cardIds)
+            McpToolCallResult(listOf(McpToolContent(text = JsonPrimitive(updated > 0).toString())))
+        } catch (e: Exception) {
+            pcExceptionError(e)
+        }
+    }
+}
+
+class PcAreSuspendedTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "areSuspended",
+        description = "AnkiConnect compatible alias: return whether each provided card is suspended.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(mapOf("cards" to JsonObject(mapOf("type" to JsonPrimitive("array"))))),
+                "required" to JsonArray(listOf(JsonPrimitive("cards")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val cardIds = arguments?.get("cards")?.jsonArray?.mapNotNull { it.jsonPrimitive.content.toLongOrNull() }
+            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: cards")
+        return try {
+            val json = JsonArray(ankiRepository.areSuspended(cardIds).map { JsonPrimitive(it) })
+            McpToolCallResult(listOf(McpToolContent(text = json.toString())))
+        } catch (e: Exception) {
+            pcExceptionError(e)
+        }
+    }
+}
+
+class PcAreDueTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "areDue",
+        description = "AnkiConnect compatible alias: return whether each provided card is due according to AnkiDroid's scheduler list.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(mapOf("cards" to JsonObject(mapOf("type" to JsonPrimitive("array"))))),
+                "required" to JsonArray(listOf(JsonPrimitive("cards")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val cardIds = arguments?.get("cards")?.jsonArray?.mapNotNull { it.jsonPrimitive.content.toLongOrNull() }
+            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: cards")
+        return try {
+            val json = JsonArray(ankiRepository.areDue(cardIds).map { JsonPrimitive(it) })
+            McpToolCallResult(listOf(McpToolContent(text = json.toString())))
+        } catch (e: Exception) {
+            pcExceptionError(e)
+        }
+    }
+}
+
+class PcGetIntervalsTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "getIntervals",
+        description = "AnkiConnect compatible alias: return the most recent interval for each card. complete=true is not available on Android.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(
+                    mapOf(
+                        "cards" to JsonObject(mapOf("type" to JsonPrimitive("array"))),
+                        "complete" to JsonObject(mapOf("type" to JsonPrimitive("boolean")))
+                    )
+                ),
+                "required" to JsonArray(listOf(JsonPrimitive("cards")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val cardIds = arguments?.get("cards")?.jsonArray?.mapNotNull { it.jsonPrimitive.content.toLongOrNull() }
+            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: cards")
+        if (arguments.booleanValue("complete") == true) {
+            return pcBusinessError(BusinessErrorCodes.INVALID_ARGUMENT, "安卓版 getIntervals 不支持 complete=true 的历史间隔")
+        }
+        return try {
+            val json = JsonArray(ankiRepository.getIntervals(cardIds).map { JsonPrimitive(it) })
+            McpToolCallResult(listOf(McpToolContent(text = json.toString())))
         } catch (e: Exception) {
             pcExceptionError(e)
         }

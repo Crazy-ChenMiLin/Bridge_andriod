@@ -17,6 +17,7 @@ class FakeAnkiRepository : AnkiRepository {
 
     private val decks = mutableListOf<AnkiDeck>()
     private val notes = mutableListOf<FakeNote>()
+    private val suspendedCardIds = mutableSetOf<Long>()
     private val noteTypes = mutableListOf<FakeNoteType>()
     private var nextDeckId: Long = 1
     private var nextNoteId: Long = 1
@@ -486,6 +487,27 @@ class FakeAnkiRepository : AnkiRepository {
         return presentCard(cardId) != null
     }
 
+    override suspend fun suspendCards(cardIds: List<Long>): Int {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        var updated = 0
+        cardIds.take(100).forEach { cardId ->
+            if (presentCard(cardId) != null && suspendedCardIds.add(cardId)) updated++
+        }
+        return updated
+    }
+
+    override suspend fun areSuspended(cardIds: List<Long>): List<Boolean> =
+        cardIds.map { it in suspendedCardIds }
+
+    override suspend fun areDue(cardIds: List<Long>): List<Boolean> {
+        val dueIds = getDueCards(limit = Int.MAX_VALUE).map { it.id }.toSet()
+        return cardIds.map { it in dueIds }
+    }
+
+    override suspend fun getIntervals(cardIds: List<Long>): List<Int> =
+        cardIds.map { presentCard(it)?.interval ?: 0 }
+
     // ── 测试辅助 ──
 
     /** 注入一个自定义笔记类型（测试用）。返回其 ID，默认 1 个模板。 */
@@ -516,8 +538,9 @@ class FakeAnkiRepository : AnkiRepository {
                 answerSimple = back,
                 answerPure = back,
                 type = 2,
-                queue = 2,
-                due = 0L
+                queue = if (note.id * 10 + ord in suspendedCardIds) -1 else 2,
+                due = 0L,
+                interval = 1
             )
         }
     }

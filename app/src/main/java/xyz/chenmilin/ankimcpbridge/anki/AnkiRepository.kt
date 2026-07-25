@@ -28,4 +28,8 @@ interface AnkiRepository {
     suspend fun presentCard(cardId: Long): AnkiCardInfo?
     suspend fun changeDeck(cardIds: List<Long>, deckName: String): Int
     suspend fun rateCard(cardId: Long, rating: Int, timeTakenMs: Long = 0L): Boolean
+    suspend fun suspendCards(cardIds: List<Long>): Int
+    suspend fun areSuspended(cardIds: List<Long>): List<Boolean>
+    suspend fun areDue(cardIds: List<Long>): List<Boolean>
+    suspend fun getIntervals(cardIds: List<Long>): List<Int>
 }

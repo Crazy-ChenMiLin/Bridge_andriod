@@ -562,6 +562,58 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         }
     }
 
+    override suspend fun suspendCards(cardIds: List<Long>): Int = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val deckNamesById = deckNamesById()
+            var updated = 0
+            cardIds.take(100).forEach { cardId ->
+                val card = readCardInfo(cardId, deckNamesById) ?: return@forEach
+                val values = ContentValues().apply {
+                    put(FlashCardsContract.ReviewInfo.NOTE_ID, card.noteId)
+                    put(FlashCardsContract.ReviewInfo.CARD_ORD, card.ord)
+                    put(FlashCardsContract.ReviewInfo.SUSPEND, 1)
+                }
+                if (
+                    appContext.contentResolver.update(
+                        FlashCardsContract.ReviewInfo.CONTENT_URI,
+                        values,
+                        null,
+                        null
+                    ) > 0
+                ) {
+                    updated++
+                }
+            }
+            if (updated > 0) notifyAnkiChanged()
+            updated
+        }
+    }
+
+    override suspend fun areSuspended(cardIds: List<Long>): List<Boolean> = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val deckNamesById = deckNamesById()
+            cardIds.map { cardId -> readCardInfo(cardId, deckNamesById)?.queue == -1 }
+        }
+    }
+
+    override suspend fun areDue(cardIds: List<Long>): List<Boolean> = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val dueIds = getDueCards(limit = Int.MAX_VALUE).map { it.id }.toSet()
+            cardIds.map { it in dueIds }
+        }
+    }
+
+    override suspend fun getIntervals(cardIds: List<Long>): List<Int> = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val deckNamesById = deckNamesById()
+            cardIds.map { cardId -> readCardInfo(cardId, deckNamesById)?.interval ?: 0 }
+        }
+    }
+
     private suspend fun doAddGenericNotes(request: AddGenericNotesRequest): BatchAddGenericResult =
         withContext(Dispatchers.IO) {
             ensureAvailable()
