@@ -126,6 +126,18 @@ private fun cardCounts(cards: List<AnkiCardInfo>): JsonObject {
     )
 }
 
+private fun fieldsOnTemplate(template: String?, knownFields: List<String>): JsonArray {
+    if (template.isNullOrBlank()) return JsonArray(emptyList())
+    val usedNames = LinkedHashSet<String>()
+    val fieldByName = knownFields.associateBy { it }
+    Regex("""\{\{\s*[#\^/]?\s*([^{}:]+?)\s*\}\}""").findAll(template).forEach { match ->
+        val rawName = match.groupValues[1].trim()
+        val fieldName = fieldByName[rawName] ?: knownFields.firstOrNull { it.equals(rawName, ignoreCase = true) }
+        if (fieldName != null) usedNames.add(fieldName)
+    }
+    return stringArray(usedNames.toList())
+}
+
 private suspend fun duplicateNoteIdOrNull(
     ankiRepository: AnkiRepository,
     noteType: AnkiNoteTypeDetail,
@@ -1019,6 +1031,41 @@ class PcModelTemplatesTool(private val ankiRepository: AnkiRepository) : McpTool
                 )
             }
             McpToolCallResult(listOf(McpToolContent(text = JsonObject(templates).toString())))
+        } catch (e: Exception) {
+            pcExceptionError(e)
+        }
+    }
+}
+
+class PcModelFieldsOnTemplatesTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "modelFieldsOnTemplates",
+        description = "PC Anki MCP compatible: read which fields appear on each card template side.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(
+                    mapOf("modelName" to JsonObject(mapOf("type" to JsonPrimitive("string"))))
+                ),
+                "required" to JsonArray(listOf(JsonPrimitive("modelName")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val modelName = arguments?.stringValue("modelName", "model_name", "model")
+            ?: throw ToolErrorException(BusinessErrorCodes.INVALID_ARGUMENT, "modelName is required")
+        return try {
+            val detail = findNoteTypeByName(ankiRepository, modelName)
+            val result = detail.templates.associate { template ->
+                template.name to JsonArray(
+                    listOf(
+                        fieldsOnTemplate(template.frontTemplate, detail.fields),
+                        fieldsOnTemplate(template.backTemplate, detail.fields)
+                    )
+                )
+            }
+            McpToolCallResult(listOf(McpToolContent(text = JsonObject(result).toString())))
         } catch (e: Exception) {
             pcExceptionError(e)
         }

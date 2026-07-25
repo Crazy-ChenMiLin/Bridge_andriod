@@ -1,6 +1,6 @@
 # 用 RakaHub + AI 聊天生成 Anki 卡片
 
-本桥接（AnkiDroid MCP Bridge）把 AnkiDroid 的能力暴露成 43 个 MCP 工具。
+本桥接（AnkiDroid MCP Bridge）把 AnkiDroid 的能力暴露成 44 个 MCP 工具。
 只要 RakaHub 作为 MCP Client 连上本桥接，并把这些工具交给 AI，就能实现：
 **在对话中聊天 → AI 自动调工具 → 卡片进入 AnkiDroid**。
 
@@ -15,7 +15,7 @@
   - 地址：`http://127.0.0.1:8766/mcp`
   - 认证：点击本 App 内「复制到 RakaHub」按钮，把得到的完整值 `Bearer 1356`（已含 `Bearer ` 前缀）
     直接粘贴到 RakaHub 的「请求头值」中，**不要手动输入 Bearer 或空格**
-- RakaHub 能列出 43 个工具即为连接成功
+- RakaHub 能列出 44 个工具即为连接成功
 
 > 如果 RakaHub 侧显示「健康检查」异常，但 `list_decks` / `add_basic_note` 都能正常调用，
 > 那是 RakaHub 的连通性探针与 `/health` 端点格式不匹配，**不影响卡片生成**。
@@ -70,6 +70,7 @@
 | `removeTags` | 从 note 移除标签 |
 | `replaceTags` | 在指定 note 上把一个标签替换成另一个标签 |
 | `modelTemplates` | 读取笔记类型的卡片模板 |
+| `modelFieldsOnTemplates` | 读取每个卡片模板正面/背面引用了哪些字段 |
 | `modelStyling` | 读取笔记类型 CSS |
 | `get_cards` | 按牌组/状态读取卡片 |
 | `get_due_cards` | 从 AnkiDroid 调度队列读取待复习卡片 |

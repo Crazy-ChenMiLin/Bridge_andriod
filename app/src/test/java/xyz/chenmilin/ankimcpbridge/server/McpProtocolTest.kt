@@ -106,7 +106,7 @@ class McpProtocolTest {
         val toolNames = response.result!!.jsonObject["tools"]!!.jsonArray
             .map { it.jsonObject["name"]!!.jsonPrimitive.content }
 
-        assertEquals("tools/list 应只暴露当前文档声明的 43 个真实支持工具", 43, toolNames.size)
+        assertEquals("tools/list 应只暴露当前文档声明的 44 个真实支持工具", 44, toolNames.size)
         assertTrue(toolNames.containsAll(
             listOf(
                 "listDecks", "deckNames", "deckNamesAndIds", "createDeck",
@@ -114,7 +114,7 @@ class McpProtocolTest {
                 "findNotes", "findCards", "notesInfo", "cardsInfo", "cardsToNotes",
                 "getDecks", "suspend", "areSuspended", "areDue", "getIntervals",
                 "updateNoteFields", "getTags", "addTags", "removeTags",
-                "replaceTags", "modelTemplates", "modelStyling",
+                "replaceTags", "modelTemplates", "modelFieldsOnTemplates", "modelStyling",
                 "get_cards", "get_due_cards", "present_card", "changeDeck", "rate_card",
                 "deckStats", "collection_stats"
             )
@@ -269,6 +269,21 @@ class McpProtocolTest {
         assertNull(templatesResponse.error)
         assertFalse(templatesResponse.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
 
+        val fieldsOnTemplatesResponse = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "modelFieldsOnTemplates",
+                "arguments" to mapOf("modelName" to "Basic")
+            ))
+        ))
+        assertNull(fieldsOnTemplatesResponse.error)
+        assertFalse(fieldsOnTemplatesResponse.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val fieldsOnTemplates = Json.parseToJsonElement(
+            fieldsOnTemplatesResponse.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        val card1 = fieldsOnTemplates["Card 1"]!!.jsonArray
+        assertEquals(listOf("Front"), card1[0].jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(listOf("Back"), card1[1].jsonArray.map { it.jsonPrimitive.content })
+
         val stylingResponse = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(
                 "name" to "modelStyling",
@@ -306,6 +321,14 @@ class McpProtocolTest {
             ))
         ))
         assertFalse(templates.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+
+        val fieldsOnTemplates = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "modelFieldsOnTemplates",
+                "arguments" to mapOf("model" to "Basic")
+            ))
+        ))
+        assertFalse(fieldsOnTemplates.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
 
         val styling = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(

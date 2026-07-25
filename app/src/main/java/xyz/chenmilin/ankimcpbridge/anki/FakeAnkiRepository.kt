@@ -177,7 +177,7 @@ class FakeAnkiRepository : AnkiRepository {
             ?: throw ModelNotFoundException("笔记类型不存在: $noteTypeId")
         return AnkiNoteTypeDetail(
             id = nt.id, name = nt.name, fields = nt.fields, type = nt.type,
-            css = null, templates = emptyList()
+            css = null, templates = templatesFor(nt)
         )
     }
 
@@ -517,6 +517,32 @@ class FakeAnkiRepository : AnkiRepository {
 
     /** 当前内存中的笔记总数（用于断言）。 */
     fun noteCount(): Int = notes.size
+
+    private fun templatesFor(noteType: FakeNoteType): List<AnkiCardTemplate> {
+        val first = noteType.fields.firstOrNull().orEmpty()
+        val second = noteType.fields.drop(1).firstOrNull().orEmpty()
+        val firstFront = if (first.isBlank()) "" else "{{$first}}"
+        val firstBack = if (second.isBlank()) "{{FrontSide}}" else "{{FrontSide}}<hr id=answer>{{$second}}"
+        val templates = mutableListOf(
+            AnkiCardTemplate(
+                ordinal = 0,
+                name = "Card 1",
+                frontTemplate = firstFront,
+                backTemplate = firstBack
+            )
+        )
+        if (noteType.cardTemplateCount > 1 && second.isNotBlank()) {
+            templates.add(
+                AnkiCardTemplate(
+                    ordinal = 1,
+                    name = "Card 2",
+                    frontTemplate = "{{$second}}",
+                    backTemplate = "{{FrontSide}}<hr id=answer>{{$first}}"
+                )
+            )
+        }
+        return templates
+    }
 
     private fun cardsForNote(note: FakeNote): List<AnkiCardInfo> {
         val noteType = noteTypes.firstOrNull { it.id == note.noteTypeId } ?: return emptyList()

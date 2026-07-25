@@ -72,6 +72,7 @@ class McpProtocolHandler(
         toolRegistry.register(PcRemoveTagsTool(ankiRepository))
         toolRegistry.register(PcReplaceTagsTool(ankiRepository))
         toolRegistry.register(PcModelTemplatesTool(ankiRepository))
+        toolRegistry.register(PcModelFieldsOnTemplatesTool(ankiRepository))
         toolRegistry.register(PcModelStylingTool(ankiRepository))
         toolRegistry.register(PcGetCardsTool(ankiRepository))
         toolRegistry.register(PcGetDueCardsTool(ankiRepository))
