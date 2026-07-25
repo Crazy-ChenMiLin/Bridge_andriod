@@ -11,10 +11,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import xyz.chenmilin.ankimcpbridge.config.BridgeAuthConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -149,34 +148,36 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Bearer Token", style = MaterialTheme.typography.titleMedium)
+                    Text("固定调试 Token", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        OutlinedTextField(
-                            value = if (state.tokenVisible) state.token else "●".repeat(state.token.length),
-                            onValueChange = {},
-                            readOnly = true,
-                            modifier = Modifier.weight(1f),
-                            visualTransformation = if (state.tokenVisible) VisualTransformation.None
-                            else PasswordVisualTransformation(),
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = FontFamily.Monospace
-                            )
-                        )
+                    Text(
+                        text = state.token,
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = MaterialTheme.colorScheme.primary
+                    )
 
-                        IconButton(onClick = { viewModel.toggleTokenVisibility() }) {
-                            Icon(
-                                if (state.tokenVisible) Icons.Default.VisibilityOff
-                                else Icons.Default.Visibility,
-                                contentDescription = "显示/隐藏"
-                            )
-                        }
-                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "本机固定 Token，不会自动变化。RakaHub 只需配置一次。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "请求头名称：Authorization",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "请求头值：${BridgeAuthConfig.AUTHORIZATION_VALUE}",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
 
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -185,15 +186,10 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                             Spacer(Modifier.width(4.dp))
                             Text("复制到 RikkaHub")
                         }
-                        OutlinedButton(
-                            onClick = { viewModel.regenerateToken() },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
-                            )
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        OutlinedButton(onClick = { viewModel.copyToClipboard("http://${state.host}:${state.port}/mcp") }) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("重新生成")
+                            Text("复制 MCP 地址")
                         }
                     }
                     Spacer(Modifier.height(4.dp))

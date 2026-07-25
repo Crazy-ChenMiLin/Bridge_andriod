@@ -1,73 +1,34 @@
 package xyz.chenmilin.ankimcpbridge.config
 
 import android.content.Context
-import android.content.SharedPreferences
-import java.security.SecureRandom
 
 /**
- * 管理 Bearer Token 的生成、持久化与验证。
+ * Bearer Token 验证器（v0.2.3 起固定 Token）。
  *
- * 设计要点（修复 v0.1.0 的 token 失效 bug）：
- * - 进程内唯一的“活跃 token”保存在 companion 的 [activeToken] 中，所有实例共享。
- * - [regenerateToken] 会同时更新内存中的活跃 token 与持久化存储，
- *   因此旧 token 在所有实例（包括已运行的 MCP Server）中立即失效。
- * - [verifyToken] 始终基于内存中的活跃 token 进行恒定时间比较，避免时序攻击。
+ * 说明：本应用仅供个人在同一台手机上通过 localhost 使用，MCP Server 只监听 127.0.0.1。
+ * 为避免随机 Token 在 App 重启、服务重启或重新安装后变化导致 RakaHub 需要重新配置，
+ * Token 固定为 [BridgeAuthConfig.FIXED_TOKEN]，不再随机生成、不再持久化、不再刷新。
  */
-class TokenManager internal constructor(
-    private val persistence: TokenPersistence
-) {
+class TokenManager internal constructor() {
 
-    init {
-        ensureLoaded()
-    }
+    /** 供 App 生产代码使用的主构造函数。 */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(context: Context) : this()
 
-    /** 供 App 代码使用的主构造函数。 */
-    constructor(context: Context) : this(SharedPreferencesTokenPersistence(context))
-
-    /** 当前进程内生效的 token。 */
+    /** 当前固定调试 Token。 */
     val token: String
-        get() {
-            ensureLoaded()
-            return activeToken!!
-        }
+        get() = BridgeAuthConfig.FIXED_TOKEN
 
-    /** 重新生成 token，旧 token 立即失效。返回新 token。 */
-    fun regenerateToken(): String {
-        val newToken = generateToken()
-        persistence.save(newToken)
-        activeToken = newToken
-        return newToken
-    }
-
-    /** 恒定时间比较，防止时序攻击。 */
+    /**
+     * 恒定时间比较，防止时序攻击。
+     *
+     * @param provided 调用方提供的 token（会被 trim，但空串仍返回 false）。
+     */
     fun verifyToken(provided: String): Boolean {
-        return constantTimeEquals(token, provided)
-    }
-
-    private fun ensureLoaded() {
-        if (activeToken == null) {
-            synchronized(loadLock) {
-                if (activeToken == null) {
-                    val stored = persistence.get()
-                    activeToken = if (!stored.isNullOrBlank()) {
-                        stored
-                    } else {
-                        generateToken().also { persistence.save(it) }
-                    }
-                }
-            }
-        }
+        return constantTimeEquals(BridgeAuthConfig.FIXED_TOKEN, provided.trim())
     }
 
     companion object {
-        internal const val PREFS_NAME = "ankimcpbridge_token"
-        internal const val KEY_TOKEN = "bearer_token"
-        private const val TOKEN_BYTES = 32
-
-        /** 进程内唯一的活跃 token，所有 TokenManager 实例共享此状态。 */
-        @Volatile
-        private var activeToken: String? = null
-        private val loadLock = Any()
 
         /** 恒定时间比较，防止时序攻击。 */
         fun constantTimeEquals(a: String, b: String): Boolean {
@@ -79,38 +40,17 @@ class TokenManager internal constructor(
             return result == 0
         }
 
-        fun generateToken(): String {
-            val bytes = ByteArray(TOKEN_BYTES)
-            SecureRandom().nextBytes(bytes)
-            return bytes.joinToString("") { "%02x".format(it) }
-        }
-
-        /** 仅供单元测试：清空进程内 token 状态，避免用例间串扰。 */
-        internal fun resetForTest() {
-            synchronized(loadLock) { activeToken = null }
+        /**
+         * 迁移清理：清除旧版本随机 Token 的 SharedPreferences 数据。
+         *
+         * 新版本已不再读取 `ankimcpbridge_token` 中的 `bearer_token`，但为防止旧数据残留，
+         * 建议在应用启动时调用一次。
+         */
+        fun clearLegacyToken(context: Context) {
+            context.getSharedPreferences(BridgeAuthConfig.LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .clear()
+                .apply()
         }
     }
-}
-
-/** Token 持久化抽象，便于在单元测试中替换为内存实现。 */
-internal interface TokenPersistence {
-    fun get(): String?
-    fun save(token: String)
-}
-
-private class SharedPreferencesTokenPersistence(context: Context) : TokenPersistence {
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences(TokenManager.PREFS_NAME, Context.MODE_PRIVATE)
-
-    override fun get(): String? = prefs.getString(TokenManager.KEY_TOKEN, null)
-    override fun save(token: String) {
-        prefs.edit().putString(TokenManager.KEY_TOKEN, token).apply()
-    }
-}
-
-/** 仅供测试的内存持久化实现（不依赖 Android Context）。 */
-internal class InMemoryTokenPersistence : TokenPersistence {
-    private var value: String? = null
-    override fun get(): String? = value
-    override fun save(token: String) { value = token }
 }

@@ -35,7 +35,7 @@ class McpProtocolTest {
         val result = response.result!!.jsonObject
         assertEquals("2024-11-05", result["protocolVersion"]?.jsonPrimitive?.content)
         assertEquals("ankidroid-mcp-bridge", result["serverInfo"]?.jsonObject?.get("name")?.jsonPrimitive?.content)
-        assertEquals("0.2.2", result["serverInfo"]?.jsonObject?.get("version")?.jsonPrimitive?.content)
+        assertEquals(McpProtocolHandler.SERVER_VERSION, result["serverInfo"]?.jsonObject?.get("version")?.jsonPrimitive?.content)
     }
 
     @Test

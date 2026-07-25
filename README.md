@@ -58,6 +58,18 @@ AnkiDroid ContentProvider
 
 ## 更新日志
 
+### v0.2.3 — 使用固定本机 Token 并移除重新生成功能
+
+本应用仅供个人在同一台手机上通过 localhost 使用，MCP Server 只监听 127.0.0.1。为避免随机 Token 在 App 重启、服务重启或重新安装后变化导致 RakaHub 需要重新配置，Token 固定为 `1356`：
+
+- **固定 Token**：`Authorization: Bearer 1356`，不再随机生成、不再刷新、不再持久化动态 Token。
+- **删除“重新生成 Token”按钮**：App 内不再提供重新生成功能；升级、重启、重新安装后 Token 保持不变。
+- **清理旧数据**：启动时清除旧版本 `ankimcpbridge_token` SharedPreferences 中的随机 Token 数据。
+- **鉴权不变**：`/mcp` 仍需要 `Authorization` 请求头，错误/缺失仍返回 HTTP 401；`/health` 仍无需鉴权。
+- **UI 简化**：首页 Token 卡片直接显示 `1356`，提供“复制到 RikkaHub”和“复制 MCP 地址”两个按钮。
+
+> 适用范围：该固定 Token 方案仅适用于本机 `127.0.0.1` 个人调试场景，服务不会监听 `0.0.0.0` 或公网地址。
+
 ### v0.2.2 — 修复 Agent 写入时牌组参数为空的问题
 
 修复 Agent 在写入时把 `deck` 传空的典型场景（先调 `ensure_deck`，再调 `add_notes` 时沿用空 deck，误以为会“继承”当前牌组）。MCP 工具本身无状态，`ensure_deck` 不会为后续调用保留“当前牌组”：
@@ -108,7 +120,7 @@ AnkiDroid ContentProvider
 | Android 系统 | 8.0（API 26）及以上 |
 | MCP 客户端 | 支持 Streamable HTTP（如 RakaHub），与本机同进程/同设备 |
 | 传输 | 仅 `http://127.0.0.1`（localhost），不支持 `https`、不支持 `0.0.0.0` |
-| 最低应用版本 | v0.2.2 |
+| 最低应用版本 | v0.2.3 |
 
 ### 2. 安装本 APK
 
@@ -139,11 +151,11 @@ AnkiDroid ContentProvider
 
 | 名称 | 值 |
 |------|------|
-| Authorization | 点击 App 首页「复制到 RikkaHub」后**直接粘贴**的内容 |
+| Authorization | `Bearer 1356` |
 
-> **不要手动输入 `Bearer` / 空格 / 横杠。** App 的「复制到 RikkaHub」按钮会一次性把
-> `Bearer <token>` 拼好并写入剪贴板，你只需要在 RakaHub 的「请求头值」里长按粘贴即可。
-> Token 本身在 App 首页「Bearer Token」卡片中查看；重新生成 Token 后请重新点击复制。
+> **不需要手动输入 `Bearer` / 空格 / 横杠。** App 首页“复制到 RikkaHub”按钮会一次性把
+> `Bearer 1356` 拼好并写入剪贴板，你只需要在 RakaHub 的「请求头值」里长按粘贴即可。
+> Token 固定为 `1356`，不会因 App 重启、服务重启或重新安装而变化，RakaHub 只需配置一次。
 
 ## 测试提示词
 
@@ -331,8 +343,8 @@ Release 工作流（`.github/workflows/release.yml`）在推送 `v*` tag 时触�
 
 ### 401 Unauthorized
 - 确认已复制正确的 Token
-- Token 是否过期（重新生成后旧 Token 立即失效）
-- 请求头格式：`Authorization: Bearer <token>`
+- Token 固定为 `1356`，不会过期或重新生成
+- 请求头格式：`Authorization: Bearer 1356`
 
 ### AnkiDroid 未安装
 - 从 Google Play 安装 AnkiDroid

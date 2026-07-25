@@ -14,6 +14,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import xyz.chenmilin.ankimcpbridge.anki.AnkiDroidRepository
+import xyz.chenmilin.ankimcpbridge.config.TokenManager
 import xyz.chenmilin.ankimcpbridge.ui.MainScreen
 import xyz.chenmilin.ankimcpbridge.ui.MainViewModel
 import xyz.chenmilin.ankimcpbridge.ui.theme.AnkiMCPBridgeTheme
@@ -30,6 +31,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 清除旧版本随机 Token 数据（v0.2.3 起已改用固定 Token）。
+        TokenManager.clearLegacyToken(this)
 
         // 监听 ViewModel 的权限申请事件，真正拉起系统权限弹窗
         lifecycleScope.launch {

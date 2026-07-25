@@ -10,13 +10,13 @@ import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
 import xyz.chenmilin.ankimcpbridge.anki.FakeAnkiRepository
-import xyz.chenmilin.ankimcpbridge.config.InMemoryTokenPersistence
+import xyz.chenmilin.ankimcpbridge.config.BridgeAuthConfig
 import xyz.chenmilin.ankimcpbridge.config.TokenManager
 import xyz.chenmilin.ankimcpbridge.logging.AppLogRepository
 
 class McpHttpServerTest {
 
-    private fun ApplicationTestBuilder.installTestApp(tokenManager: TokenManager = TokenManager(InMemoryTokenPersistence())) {
+    private fun ApplicationTestBuilder.installTestApp(tokenManager: TokenManager = TokenManager()) {
         application {
             installMcpRouting(tokenManager, FakeAnkiRepository(), AppLogRepository.instance)
         }
@@ -65,9 +65,20 @@ class McpHttpServerTest {
     }
 
     @Test
-    fun `mcp with valid token returns response`() = testApplication {
-        val tokenManager = TokenManager(InMemoryTokenPersistence())
-        val token = tokenManager.token
+    fun `mcp with wrong token returns 401`() = testApplication {
+        installTestApp()
+        val response = client.post("/mcp") {
+            setBody("""{"jsonrpc":"2.0","id":1,"method":"initialize"}""")
+            contentType(ContentType.Application.Json)
+            header("Authorization", "Bearer 1234")
+        }
+        assertEquals(401, response.status.value)
+    }
+
+    @Test
+    fun `mcp with valid fixed token returns response`() = testApplication {
+        val tokenManager = TokenManager()
+        assertEquals("1356", tokenManager.token)
         installTestApp(tokenManager)
 
         val response = client.post("/mcp") {
@@ -75,7 +86,7 @@ class McpHttpServerTest {
                 """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}"""
             )
             contentType(ContentType.Application.Json)
-            header("Authorization", "Bearer $token")
+            header("Authorization", BridgeAuthConfig.AUTHORIZATION_VALUE)
         }
 
         assertEquals(200, response.status.value)

@@ -10,9 +10,8 @@ data class UiState(
     val host: String = "127.0.0.1",
     val port: Int = 8766,
 
-    // Token
+    // Token（固定 1356）
     val token: String = "",
-    val tokenVisible: Boolean = false,
 
     // 测试结果
     val testHealthResult: String? = null,

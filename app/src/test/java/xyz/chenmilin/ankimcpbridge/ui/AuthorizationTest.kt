@@ -11,6 +11,16 @@ class AuthorizationTest {
     }
 
     @Test
+    fun `fixed token 1356 becomes Bearer 1356`() {
+        val value = buildAuthorizationValue("1356")
+        assertEquals("Bearer 1356", value)
+        assertFalse(value!!.contains("\n"))
+        assertFalse(value.contains("\r"))
+        assertFalse(value.endsWith(" "))
+        assertFalse(value.startsWith(" "))
+    }
+
+    @Test
     fun `token with surrounding spaces is trimmed`() {
         assertEquals("Bearer abc123", buildAuthorizationValue("  abc123  "))
         assertEquals("Bearer abc123", buildAuthorizationValue("\tabc123\n"))
