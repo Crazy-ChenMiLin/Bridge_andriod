@@ -490,29 +490,7 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
     override suspend fun getDueCards(deckName: String?, limit: Int): List<AnkiCardInfo> = withAnkiRetry {
         withContext(Dispatchers.IO) {
             ensureAvailable()
-            val deckNamesById = deckNamesById()
-            val args = mutableListOf(limit.coerceIn(1, 100).toString())
-            var selection = "limit=?"
-            deckName?.trim()?.takeIf { it.isNotEmpty() }?.let { name ->
-                val deckId = deckList()[name.lowercase()] ?: return@withContext emptyList()
-                selection += ", deckID=?"
-                args.add(deckId.toString())
-            }
-            val result = mutableListOf<AnkiCardInfo>()
-            appContext.contentResolver.query(
-                FlashCardsContract.ReviewInfo.CONTENT_URI,
-                null,
-                selection,
-                args.toTypedArray(),
-                null
-            )?.use { cursor ->
-                val noteIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.ReviewInfo.NOTE_ID)
-                val ordIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.ReviewInfo.CARD_ORD)
-                while (cursor.moveToNext()) {
-                    readCardInfoByNoteOrd(cursor.getLong(noteIdx), cursor.getInt(ordIdx), deckNamesById)?.let { result.add(it) }
-                }
-            }
-            result
+            readDueCards(deckName, limit.coerceIn(1, 100))
         }
     }
 
@@ -601,7 +579,7 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
     override suspend fun areDue(cardIds: List<Long>): List<Boolean> = withAnkiRetry {
         withContext(Dispatchers.IO) {
             ensureAvailable()
-            val dueIds = getDueCards(limit = Int.MAX_VALUE).map { it.id }.toSet()
+            val dueIds = readDueCards(deckName = null, limit = Int.MAX_VALUE).map { it.id }.toSet()
             cardIds.map { it in dueIds }
         }
     }
@@ -803,6 +781,32 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
             if (!cursor.moveToFirst()) return@use null
             cursor.toCardInfo(deckNamesById)
         }
+    }
+
+    private fun readDueCards(deckName: String?, limit: Int): List<AnkiCardInfo> {
+        val deckNamesById = deckNamesById()
+        val args = mutableListOf(limit.coerceAtLeast(1).toString())
+        var selection = "limit=?"
+        deckName?.trim()?.takeIf { it.isNotEmpty() }?.let { name ->
+            val deckId = deckList()[name.lowercase()] ?: return emptyList()
+            selection += ", deckID=?"
+            args.add(deckId.toString())
+        }
+        val result = mutableListOf<AnkiCardInfo>()
+        appContext.contentResolver.query(
+            FlashCardsContract.ReviewInfo.CONTENT_URI,
+            null,
+            selection,
+            args.toTypedArray(),
+            null
+        )?.use { cursor ->
+            val noteIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.ReviewInfo.NOTE_ID)
+            val ordIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.ReviewInfo.CARD_ORD)
+            while (cursor.moveToNext()) {
+                readCardInfoByNoteOrd(cursor.getLong(noteIdx), cursor.getInt(ordIdx), deckNamesById)?.let { result.add(it) }
+            }
+        }
+        return result
     }
 
     private fun android.database.Cursor.toCardInfo(deckNamesById: Map<Long, String>): AnkiCardInfo? {
