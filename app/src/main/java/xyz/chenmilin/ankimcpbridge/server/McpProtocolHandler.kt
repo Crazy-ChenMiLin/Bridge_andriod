@@ -40,6 +40,24 @@ class McpProtocolHandler(
         toolRegistry.register(GetNoteTypeTool(ankiRepository))
         toolRegistry.register(AddNoteTool(ankiRepository))
         toolRegistry.register(AddNotesTool(ankiRepository))
+        // PC Anki MCP compatible aliases for actions that map cleanly to
+        // AnkiDroid's public ContentProvider API.
+        registerPcCompatibleTools()
+    }
+
+    private fun registerPcCompatibleTools() {
+        toolRegistry.register(PcListDecksTool(ankiRepository))
+        toolRegistry.register(PcCreateDeckTool(ankiRepository))
+        toolRegistry.register(PcModelNamesTool(ankiRepository))
+        toolRegistry.register(PcModelFieldNamesTool(ankiRepository))
+        toolRegistry.register(PcAddNoteTool(ankiRepository))
+        toolRegistry.register(PcAddNotesTool(ankiRepository))
+        toolRegistry.register(PcFindNotesTool(ankiRepository))
+        toolRegistry.register(PcNotesInfoTool(ankiRepository))
+        toolRegistry.register(PcUpdateNoteFieldsTool(ankiRepository))
+        toolRegistry.register(PcGetTagsTool(ankiRepository))
+        toolRegistry.register(PcAddTagsTool(ankiRepository))
+        toolRegistry.register(PcRemoveTagsTool(ankiRepository))
     }
 
     fun handleRequest(body: String): String {

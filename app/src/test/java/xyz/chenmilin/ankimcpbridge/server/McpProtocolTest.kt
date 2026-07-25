@@ -99,6 +99,24 @@ class McpProtocolTest {
         assertTrue(toolNames.contains("bridge_status"))
     }
 
+    @Test
+    fun `tools list exposes only supported pc compatible aliases`() {
+        val response = parseResponse(handler.handleRequest(buildRequest("tools/list")))
+        assertNull(response.error)
+        val toolNames = response.result!!.jsonObject["tools"]!!.jsonArray
+            .map { it.jsonObject["name"]!!.jsonPrimitive.content }
+
+        assertTrue(toolNames.containsAll(
+            listOf(
+                "listDecks", "createDeck", "modelNames", "modelFieldNames", "addNote", "addNotes",
+                "findNotes", "notesInfo", "updateNoteFields", "getTags", "addTags", "removeTags"
+            )
+        ))
+        assertFalse("Android 不应暴露 PC GUI 占位工具", toolNames.contains("guiBrowse"))
+        assertFalse("Android 不应暴露 PC 复习占位工具", toolNames.contains("rate_card"))
+        assertFalse("Android 不应暴露未实现的模型编辑占位工具", toolNames.contains("createModel"))
+    }
+
     // ─── tools/call bridge_status ───
 
     @Test
@@ -209,6 +227,146 @@ class McpProtocolTest {
         val result = Json.parseToJsonElement(text).jsonObject
         assertTrue(result["success"]!!.jsonPrimitive.boolean)
         assertEquals("TestDeck", result["deck"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `pc compatible modelNames and modelFieldNames work`() = runTest {
+        val namesResponse = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf("name" to "modelNames"))
+        ))
+        assertNull(namesResponse.error)
+        assertFalse(namesResponse.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val names = Json.parseToJsonElement(
+            namesResponse.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray.map { it.jsonPrimitive.content }
+        assertTrue(names.contains("Basic"))
+
+        val fieldsResponse = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "modelFieldNames",
+                "arguments" to mapOf("modelName" to "Basic")
+            ))
+        ))
+        assertNull(fieldsResponse.error)
+        assertFalse(fieldsResponse.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val fields = Json.parseToJsonElement(
+            fieldsResponse.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(listOf("Front", "Back"), fields)
+    }
+
+    @Test
+    fun `pc compatible addNote writes using modelName`() = runTest {
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "deckName" to "PC Alias",
+                    "modelName" to "Basic",
+                    "fields" to mapOf("Front" to "Q", "Back" to "A"),
+                    "tags" to listOf("pc-alias")
+                )
+            ))
+        ))
+        assertNull(response.error)
+        assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val result = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertTrue(result["success"]!!.jsonPrimitive.boolean)
+        assertEquals("PC Alias", result["deck"]!!.jsonPrimitive.content)
+        assertEquals("Basic", result["modelName"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `pc compatible addNotes batch writes using shared modelName`() = runTest {
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNotes",
+                "arguments" to mapOf(
+                    "deckName" to "PC Batch Alias",
+                    "modelName" to "Basic",
+                    "notes" to listOf(
+                        mapOf("fields" to mapOf("Front" to "Q1", "Back" to "A1")),
+                        mapOf("fields" to mapOf("Front" to "Q2", "Back" to "A2"), "tags" to listOf("one"))
+                    ),
+                    "tags" to listOf("shared")
+                )
+            ))
+        ))
+        assertNull(response.error)
+        assertFalse(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val result = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals(2, result["requested"]!!.jsonPrimitive.int)
+        assertEquals(2, result["succeeded"]!!.jsonPrimitive.int)
+        assertEquals(0, result["failed"]!!.jsonPrimitive.int)
+    }
+
+    @Test
+    fun `pc compatible note search info tag and update flow works`() = runTest {
+        val add = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "deckName" to "PC Flow",
+                    "modelName" to "Basic",
+                    "fields" to mapOf("Front" to "Original front", "Back" to "Original back"),
+                    "tags" to listOf("flow-start")
+                )
+            ))
+        ))
+        val noteId = Json.parseToJsonElement(
+            add.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject["noteId"]!!.jsonPrimitive.long
+
+        val find = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf("name" to "findNotes", "arguments" to mapOf("query" to "Original front")))
+        ))
+        val foundIds = Json.parseToJsonElement(
+            find.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray.map { it.jsonPrimitive.long }
+        assertTrue(foundIds.contains(noteId))
+
+        parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addTags",
+                "arguments" to mapOf("notes" to listOf(noteId), "tags" to "flow-added")
+            ))
+        )).also { assertFalse(it.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean) }
+
+        val tags = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf("name" to "getTags", "arguments" to mapOf("pattern" to "flow")))
+        ))
+        val tagNames = Json.parseToJsonElement(
+            tags.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray.map { it.jsonPrimitive.content }
+        assertTrue(tagNames.contains("flow-added"))
+
+        val info = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf("name" to "notesInfo", "arguments" to mapOf("notes" to listOf(noteId))))
+        ))
+        val noteInfo = Json.parseToJsonElement(
+            info.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray[0].jsonObject
+        assertEquals("Basic", noteInfo["modelName"]!!.jsonPrimitive.content)
+        assertEquals("Original front", noteInfo["fields"]!!.jsonObject["Front"]!!.jsonPrimitive.content)
+
+        val update = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "updateNoteFields",
+                "arguments" to mapOf("note" to mapOf("id" to noteId, "fields" to mapOf("Front" to "Updated front")))
+            ))
+        ))
+        assertFalse(update.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+
+        parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "removeTags",
+                "arguments" to mapOf("notes" to listOf(noteId), "tags" to "flow-added")
+            ))
+        )).also { assertFalse(it.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean) }
     }
 
     // ─── 业务错误以 isError=true 形式返回（而非 JSON-RPC error） ───

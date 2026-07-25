@@ -13,4 +13,12 @@ interface AnkiRepository {
     suspend fun getNoteType(noteTypeId: Long): AnkiNoteTypeDetail
     suspend fun addNote(request: AddGenericNoteRequest): AddGenericNoteResult
     suspend fun addNotes(request: AddGenericNotesRequest): BatchAddGenericResult
+
+    // PC Anki MCP compatible capabilities available through AnkiDroid ContentProvider.
+    suspend fun findNotes(query: String): List<Long>
+    suspend fun notesInfo(noteIds: List<Long>): List<AnkiNoteInfo>
+    suspend fun updateNoteFields(noteId: Long, fields: Map<String, String>): Boolean
+    suspend fun getTags(pattern: String? = null): List<String>
+    suspend fun addTags(noteIds: List<Long>, tags: List<String>): Int
+    suspend fun removeTags(noteIds: List<Long>, tags: List<String>): Int
 }

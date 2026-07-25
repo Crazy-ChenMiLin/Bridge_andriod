@@ -325,6 +325,87 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
     override suspend fun addNotes(request: AddGenericNotesRequest): BatchAddGenericResult =
         withAnkiRetry { doAddGenericNotes(request) }
 
+    override suspend fun findNotes(query: String): List<Long> = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val result = mutableListOf<Long>()
+            val selection = query.trim().takeIf { it.isNotEmpty() }
+            appContext.contentResolver.query(
+                FlashCardsContract.Note.CONTENT_URI,
+                arrayOf(FlashCardsContract.Note._ID),
+                selection,
+                null,
+                null
+            )?.use { cursor ->
+                val idIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.Note._ID)
+                while (cursor.moveToNext() && result.size < 500) {
+                    result.add(cursor.getLong(idIdx))
+                }
+            }
+            result
+        }
+    }
+
+    override suspend fun notesInfo(noteIds: List<Long>): List<AnkiNoteInfo> = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            noteIds.take(100).mapNotNull { readNoteInfo(it) }
+        }
+    }
+
+    override suspend fun updateNoteFields(noteId: Long, fields: Map<String, String>): Boolean = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val current = readNoteInfo(noteId) ?: return@withContext false
+            val ordered = getFieldList(current.noteTypeId)?.toList() ?: return@withContext false
+            val merged = current.fields.toMutableMap()
+            fields.forEach { (key, value) ->
+                val actual = ordered.firstOrNull { it == key }
+                    ?: ordered.firstOrNull { it.equals(key, ignoreCase = true) }
+                    ?: throw FieldMappingException(AnkiErrors.FIELD_NOT_FOUND, "字段不存在: $key")
+                merged[actual] = value
+            }
+            val values = ContentValues().apply {
+                put(FlashCardsContract.Note.FLDS, ordered.map { merged[it].orEmpty() }.joinToString(FIELD_SEPARATOR))
+            }
+            val uri = Uri.withAppendedPath(FlashCardsContract.Note.CONTENT_URI, noteId.toString())
+            val updated = appContext.contentResolver.update(uri, values, null, null)
+            if (updated > 0) notifyAnkiChanged()
+            updated > 0
+        }
+    }
+
+    override suspend fun getTags(pattern: String?): List<String> = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val filter = pattern?.trim()?.takeIf { it.isNotEmpty() }
+            val tags = linkedSetOf<String>()
+            appContext.contentResolver.query(
+                FlashCardsContract.Note.CONTENT_URI,
+                arrayOf(FlashCardsContract.Note.TAGS),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val tagsIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.Note.TAGS)
+                while (cursor.moveToNext()) {
+                    parseTags(cursor.getString(tagsIdx)).forEach { tag ->
+                        if (filter == null || tag.contains(filter, ignoreCase = true)) tags.add(tag)
+                    }
+                }
+            }
+            tags.sorted()
+        }
+    }
+
+    override suspend fun addTags(noteIds: List<Long>, tags: List<String>): Int = withAnkiRetry {
+        updateTags(noteIds, tags, add = true)
+    }
+
+    override suspend fun removeTags(noteIds: List<Long>, tags: List<String>): Int = withAnkiRetry {
+        updateTags(noteIds, tags, add = false)
+    }
+
     private suspend fun doAddGenericNotes(request: AddGenericNotesRequest): BatchAddGenericResult =
         withContext(Dispatchers.IO) {
             ensureAvailable()
@@ -440,6 +521,65 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         moveNoteCardsToDeck(noteId, deckId)
         return noteId
     }
+
+    private suspend fun readNoteInfo(noteId: Long): AnkiNoteInfo? {
+        val uri = Uri.withAppendedPath(FlashCardsContract.Note.CONTENT_URI, noteId.toString())
+        return appContext.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) return@use null
+            val idIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.Note._ID)
+            val midIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.Note.MID)
+            val fldsIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.Note.FLDS)
+            val tagsIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.Note.TAGS)
+            val id = cursor.getLong(idIdx)
+            val mid = cursor.getLong(midIdx)
+            val detail = try {
+                doGetNoteType(mid)
+            } catch (e: Exception) {
+                null
+            }
+            val orderedFields = detail?.fields ?: getFieldList(mid)?.toList().orEmpty()
+            val storedFields = (cursor.getString(fldsIdx) ?: "").split(FIELD_SEPARATOR)
+            val fields = orderedFields.mapIndexed { index, fieldName ->
+                fieldName to storedFields.getOrElse(index) { "" }
+            }.toMap()
+            AnkiNoteInfo(
+                id = id,
+                noteTypeId = mid,
+                modelName = detail?.name.orEmpty(),
+                fields = fields,
+                tags = parseTags(cursor.getString(tagsIdx))
+            )
+        }
+    }
+
+    private suspend fun updateTags(noteIds: List<Long>, tags: List<String>, add: Boolean): Int =
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            val cleanTags = tags.map { it.trim() }.filter { it.isNotBlank() }
+            if (cleanTags.isEmpty()) return@withContext 0
+            var updatedCount = 0
+            noteIds.take(100).forEach { noteId ->
+                val current = readNoteInfo(noteId) ?: return@forEach
+                val nextTags = if (add) {
+                    (current.tags + cleanTags).distinct()
+                } else {
+                    val remove = cleanTags.toSet()
+                    current.tags.filterNot { remove.contains(it) }
+                }
+                val values = ContentValues().apply {
+                    put(FlashCardsContract.Note.TAGS, nextTags.joinToString(" "))
+                }
+                val uri = Uri.withAppendedPath(FlashCardsContract.Note.CONTENT_URI, noteId.toString())
+                if (appContext.contentResolver.update(uri, values, null, null) > 0) {
+                    updatedCount++
+                }
+            }
+            if (updatedCount > 0) notifyAnkiChanged()
+            updatedCount
+        }
+
+    private fun parseTags(raw: String?): List<String> =
+        raw.orEmpty().split(" ").map { it.trim() }.filter { it.isNotBlank() }.distinct()
 
     private fun buildGenericValues(
         modelId: Long,

@@ -303,6 +303,96 @@ class FakeAnkiRepository : AnkiRepository {
         )
     }
 
+    override suspend fun findNotes(query: String): List<Long> {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return notes.map { it.id }
+        return notes.filter { note ->
+            val deck = decks.firstOrNull { it.id == note.deckId }?.name.orEmpty()
+            val tags = note.tags.joinToString(" ")
+            val fields = note.fields.values.joinToString(" ")
+            deck.contains(trimmed, ignoreCase = true) ||
+                tags.contains(trimmed.removePrefix("tag:"), ignoreCase = true) ||
+                fields.contains(trimmed, ignoreCase = true)
+        }.map { it.id }
+    }
+
+    override suspend fun notesInfo(noteIds: List<Long>): List<AnkiNoteInfo> {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        return noteIds.mapNotNull { id ->
+            val note = notes.firstOrNull { it.id == id } ?: return@mapNotNull null
+            val noteType = noteTypes.firstOrNull { it.id == note.noteTypeId } ?: return@mapNotNull null
+            AnkiNoteInfo(
+                id = note.id,
+                noteTypeId = note.noteTypeId,
+                modelName = noteType.name,
+                fields = note.fields,
+                tags = note.tags
+            )
+        }
+    }
+
+    override suspend fun updateNoteFields(noteId: Long, fields: Map<String, String>): Boolean {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        val index = notes.indexOfFirst { it.id == noteId }
+        if (index < 0) return false
+        val note = notes[index]
+        val noteType = noteTypes.first { it.id == note.noteTypeId }
+        val nextFields = note.fields.toMutableMap()
+        fields.forEach { (key, value) ->
+            val actual = noteType.fields.firstOrNull { it.equals(key, ignoreCase = true) }
+                ?: throw FieldMappingException(AnkiErrors.FIELD_NOT_FOUND, "字段不存在: $key")
+            nextFields[actual] = value
+        }
+        notes[index] = note.copy(fields = nextFields)
+        return true
+    }
+
+    override suspend fun getTags(pattern: String?): List<String> {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        val normalized = pattern?.trim()?.takeIf { it.isNotEmpty() }
+        return notes.flatMap { it.tags }
+            .distinct()
+            .filter { normalized == null || it.contains(normalized, ignoreCase = true) }
+            .sorted()
+    }
+
+    override suspend fun addTags(noteIds: List<Long>, tags: List<String>): Int {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        val cleanTags = tags.map { it.trim() }.filter { it.isNotBlank() }
+        var updated = 0
+        noteIds.forEach { id ->
+            val index = notes.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                val note = notes[index]
+                notes[index] = note.copy(tags = (note.tags + cleanTags).distinct())
+                updated++
+            }
+        }
+        return updated
+    }
+
+    override suspend fun removeTags(noteIds: List<Long>, tags: List<String>): Int {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        val cleanTags = tags.map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        var updated = 0
+        noteIds.forEach { id ->
+            val index = notes.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                val note = notes[index]
+                notes[index] = note.copy(tags = note.tags.filterNot { cleanTags.contains(it) })
+                updated++
+            }
+        }
+        return updated
+    }
+
     // ── 测试辅助 ──
 
     /** 注入一个自定义笔记类型（测试用）。返回其 ID，默认 1 个模板。 */

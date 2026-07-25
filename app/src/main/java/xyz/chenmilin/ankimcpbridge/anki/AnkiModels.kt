@@ -113,6 +113,14 @@ data class AnkiNoteTypeDetail(
     val templates: List<AnkiCardTemplate>
 )
 
+data class AnkiNoteInfo(
+    val id: Long,
+    val noteTypeId: Long,
+    val modelName: String,
+    val fields: Map<String, String>,
+    val tags: List<String>
+)
+
 /** 通用写入单张请求：按笔记类型 ID + 字段名/值写入。 */
 data class AddGenericNoteRequest(
     val deck: String,

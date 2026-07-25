@@ -1,7 +1,7 @@
 # 用 RakaHub + AI 聊天生成 Anki 卡片
 
-本桥接（AnkiDroid MCP Bridge）把 AnkiDroid 的能力暴露成 9 个 MCP 工具。
-只要 RakaHub 作为 MCP Client 连上本桥接，并把这 9 个工具交给 AI，就能实现：
+本桥接（AnkiDroid MCP Bridge）把 AnkiDroid 的能力暴露成 21 个 MCP 工具。
+只要 RakaHub 作为 MCP Client 连上本桥接，并把这些工具交给 AI，就能实现：
 **在对话中聊天 → AI 自动调工具 → 卡片进入 AnkiDroid**。
 
 ---
@@ -15,14 +15,14 @@
   - 地址：`http://127.0.0.1:8766/mcp`
   - 认证：点击本 App 内「复制到 RakaHub」按钮，把得到的完整值 `Bearer 1356`（已含 `Bearer ` 前缀）
     直接粘贴到 RakaHub 的「请求头值」中，**不要手动输入 Bearer 或空格**
-- RakaHub 能列出 9 个工具即为连接成功
+- RakaHub 能列出 21 个工具即为连接成功
 
 > 如果 RakaHub 侧显示「健康检查」异常，但 `list_decks` / `add_basic_note` 都能正常调用，
 > 那是 RakaHub 的连通性探针与 `/health` 端点格式不匹配，**不影响卡片生成**。
 
 ---
 
-## 2. 九个工具说明
+## 2. 工具说明
 
 | 工具名 | 作用 | 何时用 |
 |--------|------|--------|
@@ -37,6 +37,31 @@
 | `add_notes` | 批量按任意笔记类型写入（≤100 张） | 一次对话提炼出多个不同字段结构的笔记 |
 
 > `add_basic_note` / `add_basic_notes` 在 v0.2.0 中已内部复用通用写入链路，行为与之前一致，可继续放心使用。
+
+### PC MCP 兼容别名
+
+这些工具名对齐电脑端 Anki MCP / AnkiConnect 常见接口，但只保留 AnkiDroid 官方 ContentProvider 能真实支持的能力：
+
+| 工具名 | 对应能力 |
+|--------|----------|
+| `listDecks` | 列出牌组（返回 `deckNames` 和基础 deck 信息；安卓端不提供完整 PC 统计） |
+| `createDeck` | 创建/确保牌组存在 |
+| `modelNames` | 列出笔记类型名称 |
+| `modelFieldNames` | 按 `modelName` 获取字段名 |
+| `addNote` | 按 `deckName` + `modelName` + `fields` 写入单条笔记 |
+| `addNotes` | 按同一个 `deckName` + `modelName` 批量写入 ≤100 条 |
+| `findNotes` | 使用 Anki 搜索语法查找 noteId |
+| `notesInfo` | 查询 note 的字段、标签、笔记类型 |
+| `updateNoteFields` | 更新已有 note 的字段 |
+| `getTags` | 列出/过滤标签 |
+| `addTags` | 给 note 增加标签 |
+| `removeTags` | 从 note 移除标签 |
+
+### 安卓端不暴露的 PC 专属能力
+
+以下能力依赖电脑端 Anki GUI、AnkiConnect 模型编辑/媒体/复习接口，或 AnkiDroid 公开 API 未暴露的低层能力，因此安卓版不放进 `tools/list`：
+
+`guiAddCards`、`guiBrowse`、`guiCurrentCard`、`guiSelectedNotes`、`guiEditNote`、`guiUndo`、`guiSelectCard`、`guiDeckOverview`、`guiDeckBrowser`、`get_cards`、`get_due_cards`、`present_card`、`rate_card`、`changeDeck`、`deckStats`、`collection_stats`、`deleteNotes`、`createModel`、`addModelField`、`renameModelField`、`removeModelField`、`repositionModelField`、`modelTemplates`、`updateModelTemplates`、`modelStyling`、`updateModelStyling`、`deleteMediaFile`。
 
 ---
 
