@@ -276,6 +276,43 @@ class McpProtocolTest {
     }
 
     @Test
+    fun `pc compatible deck and model tools accept common aliases`() = runTest {
+        val deck = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "createDeck",
+                "arguments" to mapOf("deck" to "PC Alias Deck")
+            ))
+        ))
+        assertNull(deck.error)
+        assertFalse(deck.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+
+        val fields = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "modelFieldNames",
+                "arguments" to mapOf("model_name" to "Basic")
+            ))
+        ))
+        assertNull(fields.error)
+        assertFalse(fields.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+
+        val templates = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "modelTemplates",
+                "arguments" to mapOf("model" to "Basic")
+            ))
+        ))
+        assertFalse(templates.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+
+        val styling = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "modelStyling",
+                "arguments" to mapOf("model_name" to "Basic")
+            ))
+        ))
+        assertFalse(styling.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
     fun `pc compatible addNote writes using modelName`() = runTest {
         val response = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(
@@ -533,6 +570,46 @@ class McpProtocolTest {
     }
 
     @Test
+    fun `pc compatible tag replacement aliases and video rejection work`() = runTest {
+        val add = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "deckName" to "PC Alias Flow",
+                    "modelName" to "Basic",
+                    "fields" to mapOf("Front" to "Alias front", "Back" to "Alias back"),
+                    "tags" to listOf("alias-start")
+                )
+            ))
+        ))
+        val noteId = Json.parseToJsonElement(
+            add.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonPrimitive.long
+
+        parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "replaceTags",
+                "arguments" to mapOf("notes" to listOf(noteId), "tag_to_replace" to "alias-start", "replace_with_tag" to "alias-renamed")
+            ))
+        )).also { assertFalse(it.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean) }
+
+        val videoUpdate = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "updateNoteFields",
+                "arguments" to mapOf(
+                    "note" to mapOf(
+                        "id" to noteId,
+                        "fields" to mapOf("Front" to "Alias updated"),
+                        "video" to listOf(mapOf("url" to "https://example.com/v.mp4"))
+                    )
+                )
+            ))
+        ))
+        assertNull(videoUpdate.error)
+        assertTrue(videoUpdate.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
     fun `pc compatible card retrieval present change deck and rate flow works`() = runTest {
         val add = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(
@@ -603,6 +680,60 @@ class McpProtocolTest {
             buildRequest("tools/call", mapOf("name" to "collection_stats"))
         ))
         assertFalse(collection.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `pc compatible card tools accept camel case aliases`() = runTest {
+        val add = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "deckName" to "PC Camel Cards",
+                    "modelName" to "Basic",
+                    "fields" to mapOf("Front" to "Camel card front", "Back" to "Camel card back"),
+                    "allowDuplicate" to true
+                )
+            ))
+        ))
+        val noteId = Json.parseToJsonElement(
+            add.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonPrimitive.long
+        val cardId = noteId * 10
+
+        val cards = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "get_cards",
+                "arguments" to mapOf("deckName" to "PC Camel Cards", "cardState" to "due", "limit" to 10)
+            ))
+        ))
+        assertFalse(cards.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+
+        val present = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "present_card",
+                "arguments" to mapOf("cardId" to cardId, "showAnswer" to true)
+            ))
+        ))
+        val card = Json.parseToJsonElement(
+            present.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals("Camel card back", card["answer"]!!.jsonPrimitive.content)
+
+        val due = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "get_due_cards",
+                "arguments" to mapOf("deckName" to "PC Camel Cards", "limit" to 10)
+            ))
+        ))
+        assertFalse(due.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+
+        val rate = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "rate_card",
+                "arguments" to mapOf("cardId" to cardId, "rating" to 2, "timeTakenMs" to 900)
+            ))
+        ))
+        assertFalse(rate.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
     }
 
     // ─── 业务错误以 isError=true 形式返回（而非 JSON-RPC error） ───

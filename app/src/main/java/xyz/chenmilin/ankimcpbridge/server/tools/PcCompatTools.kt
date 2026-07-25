@@ -69,6 +69,12 @@ private fun JsonObject.stringValue(vararg names: String): String? =
 private fun JsonObject.booleanValue(vararg names: String): Boolean? =
     names.firstNotNullOfOrNull { name -> this[name]?.jsonPrimitive?.booleanOrNull }
 
+private fun JsonObject.longValue(vararg names: String): Long? =
+    names.firstNotNullOfOrNull { name -> this[name]?.jsonPrimitive?.content?.toLongOrNull() }
+
+private fun JsonObject.intValue(vararg names: String): Int? =
+    names.firstNotNullOfOrNull { name -> this[name]?.jsonPrimitive?.content?.toIntOrNull() }
+
 private fun JsonObject.unsupportedAttachmentNames(): List<String> =
     listOf("audio", "picture", "video").filter { this[it] != null }
 
@@ -201,15 +207,18 @@ class PcCreateDeckTool(private val ankiRepository: AnkiRepository) : McpTool {
             mapOf(
                 "type" to JsonPrimitive("object"),
                 "properties" to JsonObject(
-                    mapOf("deckName" to JsonObject(mapOf("type" to JsonPrimitive("string"), "minLength" to JsonPrimitive(1))))
+                    mapOf(
+                        "deckName" to JsonObject(mapOf("type" to JsonPrimitive("string"), "minLength" to JsonPrimitive(1))),
+                        "deck" to JsonObject(mapOf("type" to JsonPrimitive("string"), "minLength" to JsonPrimitive(1)))
+                    )
                 ),
-                "required" to JsonArray(listOf(JsonPrimitive("deckName")))
+                "required" to JsonArray(emptyList())
             )
         )
     )
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult {
-        val deckName = arguments?.get("deckName")?.jsonPrimitive?.content
+        val deckName = arguments?.stringValue("deckName", "deck")
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: deckName")
         if (deckName.isBlank()) return pcBusinessError(BusinessErrorCodes.DECK_NAME_EMPTY, "deckName 不能为空")
         return try {
@@ -250,14 +259,20 @@ class PcModelFieldNamesTool(private val ankiRepository: AnkiRepository) : McpToo
         inputSchema = JsonObject(
             mapOf(
                 "type" to JsonPrimitive("object"),
-                "properties" to JsonObject(mapOf("modelName" to JsonObject(mapOf("type" to JsonPrimitive("string"))))),
-                "required" to JsonArray(listOf(JsonPrimitive("modelName")))
+                "properties" to JsonObject(
+                    mapOf(
+                        "modelName" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "model_name" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "model" to JsonObject(mapOf("type" to JsonPrimitive("string")))
+                    )
+                ),
+                "required" to JsonArray(emptyList())
             )
         )
     )
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult {
-        val modelName = arguments?.get("modelName")?.jsonPrimitive?.content
+        val modelName = arguments?.stringValue("modelName", "model_name", "model")
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: modelName")
         return try {
             val id = findNoteTypeIdByName(ankiRepository, modelName)
@@ -512,8 +527,12 @@ class PcUpdateNoteFieldsTool(private val ankiRepository: AnkiRepository) : McpTo
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: note")
         val id = note["id"]?.jsonPrimitive?.content?.toLongOrNull()
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少或非法参数: note.id")
-        if (note["audio"] != null || note["picture"] != null) {
-            return pcBusinessError(BusinessErrorCodes.INVALID_ARGUMENT, "安卓版 updateNoteFields 只支持 fields 字段更新，不支持媒体附件更新")
+        val attachments = note.unsupportedAttachmentNames()
+        if (attachments.isNotEmpty()) {
+            return pcBusinessError(
+                BusinessErrorCodes.INVALID_ARGUMENT,
+                "安卓版 updateNoteFields 只支持 fields 字段更新，不支持媒体附件更新: ${attachments.joinToString(", ")}"
+            )
         }
         val fields = note["fields"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content }
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: note.fields")
@@ -600,10 +619,12 @@ class PcReplaceTagsTool(private val ankiRepository: AnkiRepository) : McpTool {
                     mapOf(
                         "notes" to JsonObject(mapOf("type" to JsonPrimitive("array"))),
                         "tagToReplace" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
-                        "replaceWithTag" to JsonObject(mapOf("type" to JsonPrimitive("string")))
+                        "tag_to_replace" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "replaceWithTag" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "replace_with_tag" to JsonObject(mapOf("type" to JsonPrimitive("string")))
                     )
                 ),
-                "required" to JsonArray(listOf(JsonPrimitive("notes"), JsonPrimitive("tagToReplace"), JsonPrimitive("replaceWithTag")))
+                "required" to JsonArray(listOf(JsonPrimitive("notes")))
             )
         )
     )
@@ -611,9 +632,9 @@ class PcReplaceTagsTool(private val ankiRepository: AnkiRepository) : McpTool {
     override suspend fun call(arguments: JsonObject?): McpToolCallResult {
         val ids = arguments?.get("notes")?.jsonArray?.mapNotNull { it.jsonPrimitive.content.toLongOrNull() }
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: notes")
-        val from = arguments["tagToReplace"]?.jsonPrimitive?.content
+        val from = arguments.stringValue("tagToReplace", "tag_to_replace")
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: tagToReplace")
-        val to = arguments["replaceWithTag"]?.jsonPrimitive?.content
+        val to = arguments.stringValue("replaceWithTag", "replace_with_tag")
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: replaceWithTag")
         return try {
             val updated = ankiRepository.replaceTags(ids, from, to)
@@ -631,14 +652,20 @@ class PcModelTemplatesTool(private val ankiRepository: AnkiRepository) : McpTool
         inputSchema = JsonObject(
             mapOf(
                 "type" to JsonPrimitive("object"),
-                "properties" to JsonObject(mapOf("modelName" to JsonObject(mapOf("type" to JsonPrimitive("string"))))),
-                "required" to JsonArray(listOf(JsonPrimitive("modelName")))
+                "properties" to JsonObject(
+                    mapOf(
+                        "modelName" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "model_name" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "model" to JsonObject(mapOf("type" to JsonPrimitive("string")))
+                    )
+                ),
+                "required" to JsonArray(emptyList())
             )
         )
     )
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult {
-        val modelName = arguments?.get("modelName")?.jsonPrimitive?.content
+        val modelName = arguments?.stringValue("modelName", "model_name", "model")
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: modelName")
         return try {
             val detail = findNoteTypeByName(ankiRepository, modelName)
@@ -664,14 +691,20 @@ class PcModelStylingTool(private val ankiRepository: AnkiRepository) : McpTool {
         inputSchema = JsonObject(
             mapOf(
                 "type" to JsonPrimitive("object"),
-                "properties" to JsonObject(mapOf("modelName" to JsonObject(mapOf("type" to JsonPrimitive("string"))))),
-                "required" to JsonArray(listOf(JsonPrimitive("modelName")))
+                "properties" to JsonObject(
+                    mapOf(
+                        "modelName" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "model_name" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "model" to JsonObject(mapOf("type" to JsonPrimitive("string")))
+                    )
+                ),
+                "required" to JsonArray(emptyList())
             )
         )
     )
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult {
-        val modelName = arguments?.get("modelName")?.jsonPrimitive?.content
+        val modelName = arguments?.stringValue("modelName", "model_name", "model")
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: modelName")
         return try {
             val detail = findNoteTypeByName(ankiRepository, modelName)
@@ -692,7 +725,14 @@ class PcGetCardsTool(private val ankiRepository: AnkiRepository) : McpTool {
                 "properties" to JsonObject(
                     mapOf(
                         "deck_name" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "deckName" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
                         "card_state" to JsonObject(
+                            mapOf(
+                                "type" to JsonPrimitive("string"),
+                                "enum" to JsonArray(listOf("due", "new", "learning", "suspended", "buried").map { JsonPrimitive(it) })
+                            )
+                        ),
+                        "cardState" to JsonObject(
                             mapOf(
                                 "type" to JsonPrimitive("string"),
                                 "enum" to JsonArray(listOf("due", "new", "learning", "suspended", "buried").map { JsonPrimitive(it) })
@@ -707,8 +747,8 @@ class PcGetCardsTool(private val ankiRepository: AnkiRepository) : McpTool {
     )
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult = try {
-        val deckName = arguments?.get("deck_name")?.jsonPrimitive?.content
-        val state = arguments?.get("card_state")?.jsonPrimitive?.content
+        val deckName = arguments?.stringValue("deck_name", "deckName")
+        val state = arguments?.stringValue("card_state", "cardState")
         val limit = (arguments?.get("limit")?.jsonPrimitive?.content?.toIntOrNull() ?: 100).coerceIn(1, 500)
         val cards = ankiRepository.getCards(deckName, state, limit)
         McpToolCallResult(listOf(McpToolContent(text = JsonArray(cards.map { cardToJson(it) }).toString())))
@@ -727,6 +767,7 @@ class PcGetDueCardsTool(private val ankiRepository: AnkiRepository) : McpTool {
                 "properties" to JsonObject(
                     mapOf(
                         "deck_name" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
+                        "deckName" to JsonObject(mapOf("type" to JsonPrimitive("string"))),
                         "include_learning" to JsonObject(mapOf("type" to JsonPrimitive("boolean"))),
                         "include_new" to JsonObject(mapOf("type" to JsonPrimitive("boolean"))),
                         "limit" to JsonObject(mapOf("type" to JsonPrimitive("integer"), "minimum" to JsonPrimitive(1), "maximum" to JsonPrimitive(100)))
@@ -738,7 +779,7 @@ class PcGetDueCardsTool(private val ankiRepository: AnkiRepository) : McpTool {
     )
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult = try {
-        val deckName = arguments?.get("deck_name")?.jsonPrimitive?.content
+        val deckName = arguments?.stringValue("deck_name", "deckName")
         val limit = (arguments?.get("limit")?.jsonPrimitive?.content?.toIntOrNull() ?: 20).coerceIn(1, 100)
         val cards = ankiRepository.getDueCards(deckName, limit)
         McpToolCallResult(listOf(McpToolContent(text = JsonArray(cards.map { cardToJson(it) }).toString())))
@@ -757,19 +798,21 @@ class PcPresentCardTool(private val ankiRepository: AnkiRepository) : McpTool {
                 "properties" to JsonObject(
                     mapOf(
                         "card_id" to JsonObject(mapOf("type" to JsonPrimitive("number"))),
-                        "show_answer" to JsonObject(mapOf("type" to JsonPrimitive("boolean")))
+                        "cardId" to JsonObject(mapOf("type" to JsonPrimitive("number"))),
+                        "show_answer" to JsonObject(mapOf("type" to JsonPrimitive("boolean"))),
+                        "showAnswer" to JsonObject(mapOf("type" to JsonPrimitive("boolean")))
                     )
                 ),
-                "required" to JsonArray(listOf(JsonPrimitive("card_id")))
+                "required" to JsonArray(emptyList())
             )
         )
     )
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult {
-        val cardId = arguments?.get("card_id")?.jsonPrimitive?.content?.toLongOrNull()
+        val cardId = arguments?.longValue("card_id", "cardId")
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少或非法参数: card_id")
         return try {
-            val showAnswer = arguments["show_answer"]?.jsonPrimitive?.booleanOrNull ?: false
+            val showAnswer = arguments.booleanValue("show_answer", "showAnswer") ?: false
             val card = ankiRepository.presentCard(cardId)
             McpToolCallResult(listOf(McpToolContent(text = (card?.let { cardToJson(it, showAnswer) } ?: JsonNull).toString())))
         } catch (e: Exception) {
@@ -821,21 +864,23 @@ class PcRateCardTool(private val ankiRepository: AnkiRepository) : McpTool {
                 "properties" to JsonObject(
                     mapOf(
                         "card_id" to JsonObject(mapOf("type" to JsonPrimitive("number"))),
+                        "cardId" to JsonObject(mapOf("type" to JsonPrimitive("number"))),
                         "rating" to JsonObject(mapOf("type" to JsonPrimitive("integer"), "minimum" to JsonPrimitive(1), "maximum" to JsonPrimitive(4))),
-                        "time_taken_ms" to JsonObject(mapOf("type" to JsonPrimitive("integer"), "minimum" to JsonPrimitive(0)))
+                        "time_taken_ms" to JsonObject(mapOf("type" to JsonPrimitive("integer"), "minimum" to JsonPrimitive(0))),
+                        "timeTakenMs" to JsonObject(mapOf("type" to JsonPrimitive("integer"), "minimum" to JsonPrimitive(0)))
                     )
                 ),
-                "required" to JsonArray(listOf(JsonPrimitive("card_id"), JsonPrimitive("rating")))
+                "required" to JsonArray(listOf(JsonPrimitive("rating")))
             )
         )
     )
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult {
-        val cardId = arguments?.get("card_id")?.jsonPrimitive?.content?.toLongOrNull()
+        val cardId = arguments?.longValue("card_id", "cardId")
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少或非法参数: card_id")
-        val rating = arguments["rating"]?.jsonPrimitive?.content?.toIntOrNull()
+        val rating = arguments.intValue("rating")
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少或非法参数: rating")
-        val timeTaken = arguments["time_taken_ms"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+        val timeTaken = arguments.longValue("time_taken_ms", "timeTakenMs") ?: 0L
         return try {
             val ok = ankiRepository.rateCard(cardId, rating, timeTaken)
             McpToolCallResult(listOf(McpToolContent(text = JsonObject(mapOf("rated" to JsonPrimitive(ok))).toString())), isError = !ok)

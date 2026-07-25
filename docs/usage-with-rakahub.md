@@ -71,6 +71,8 @@
 
 如果 PC 客户端在 `addNote` / `addNotes` 里传 `audio`、`picture`、`video`，安卓版会直接返回“不支持媒体附件”的错误，不会静默忽略后写入一张缺媒体的卡。
 
+PC 兼容别名会尽量同时识别常见驼峰/下划线参数，例如 `deckName`/`deck_name`、`modelName`/`model_name`、`cardId`/`card_id`、`showAnswer`/`show_answer`。
+
 ### 安卓端不暴露的 PC 专属能力
 
 以下能力依赖电脑端 Anki GUI、AnkiConnect 模型编辑/媒体/同步接口，或 AnkiDroid 公开 API 未暴露的低层能力，因此安卓版不放进 `tools/list`：
