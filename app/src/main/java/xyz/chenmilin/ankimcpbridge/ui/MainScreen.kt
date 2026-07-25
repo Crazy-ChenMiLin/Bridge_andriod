@@ -261,6 +261,16 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                         }
                     }
 
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { viewModel.testListNoteTypes() }) {
+                            Text("读取笔记类型")
+                        }
+                        OutlinedButton(onClick = { viewModel.testGenericAddNote() }) {
+                            Text("通用写入测试")
+                        }
+                    }
+
                     // 测试结果显示
                     state.testHealthResult?.let {
                         Spacer(Modifier.height(8.dp))
@@ -273,6 +283,14 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     state.testAddNoteResult?.let {
                         Spacer(Modifier.height(4.dp))
                         TestResultItem("添加卡片", it)
+                    }
+                    state.testNoteTypesResult?.let {
+                        Spacer(Modifier.height(4.dp))
+                        TestResultItem("读取笔记类型", it)
+                    }
+                    state.testGenericAddResult?.let {
+                        Spacer(Modifier.height(4.dp))
+                        TestResultItem("通用写入测试", it)
                     }
                 }
             }

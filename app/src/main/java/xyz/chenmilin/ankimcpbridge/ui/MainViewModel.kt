@@ -171,6 +171,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 快速测试：读取本机 AnkiDroid 笔记类型。
+     * 展示找到的数量、ID、名称与有序字段列表（不展示完整卡片正文，避免泄露隐私）。
+     */
+    fun testListNoteTypes() {
+        viewModelScope.launch {
+            try {
+                val types = ankiRepo.listNoteTypes()
+                val sb = StringBuilder("找到 ${types.size} 个笔记类型:\n")
+                types.take(20).forEach { t ->
+                    sb.append("  ${t.id}: ${t.name}\n")
+                    sb.append("    字段: ${t.fields.joinToString(", ")}\n")
+                }
+                if (types.size > 20) sb.append("  ...（仅显示前 20 个）\n")
+                _uiState.update { it.copy(testNoteTypesResult = sb.toString().trimEnd()) }
+                logRepo.info("读取笔记类型成功: ${types.size} 个")
+            } catch (e: Exception) {
+                _uiState.update { it.copy(testNoteTypesResult = "失败: ${e.message}") }
+                logRepo.error("读取笔记类型失败: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 快速测试：通用写入一条笔记。
+     * 优先寻找 Basic 笔记类型；找不到时不做复杂自动创建，直接提示。
+     * 写入后展示 noteId / persisted / refreshNotified / noteTypeId / deck（不展示字段正文）。
+     */
+    fun testGenericAddNote() {
+        viewModelScope.launch {
+            try {
+                val types = ankiRepo.listNoteTypes()
+                val basic = types.firstOrNull { it.name.equals("Basic", ignoreCase = true) }
+                    ?: types.firstOrNull { it.fields.size == 2 && it.fields[0].equals("Front", ignoreCase = true) && it.fields[1].equals("Back", ignoreCase = true) }
+                if (basic == null) {
+                    _uiState.update { it.copy(testGenericAddResult = "未找到 Basic 笔记类型，无法自动写入测试卡片（可在 AnkiDroid 中创建后重试）") }
+                    logRepo.warn("通用写入测试：未找到 Basic 笔记类型")
+                    return@launch
+                }
+                ankiRepo.ensureDeck("MCP Test")
+                val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                    .format(java.util.Date())
+                val request = xyz.chenmilin.ankimcpbridge.anki.AddGenericNoteRequest(
+                    deck = "MCP Test",
+                    noteTypeId = basic.id,
+                    fields = mapOf(
+                        "Front" to "MCP 通用写入测试 ($timestamp)",
+                        "Back" to "由 AnkiDroid MCP Bridge 通用接口创建。"
+                    ),
+                    tags = listOf("mcp-test")
+                )
+                val result = ankiRepo.addNote(request)
+                _uiState.update {
+                    it.copy(
+                        testGenericAddResult = buildString {
+                            append("写入结果:\n")
+                            append("  noteId=${result.noteId}\n")
+                            append("  noteTypeId=${result.noteTypeId}\n")
+                            append("  deck=${result.deck}\n")
+                            append("  persisted=${result.persisted}\n")
+                            append("  refreshNotified=${result.refreshNotified}")
+                        }
+                    )
+                }
+                logRepo.info("通用写入测试成功, noteId=${result.noteId}, persisted=${result.persisted}")
+            } catch (e: Exception) {
+                _uiState.update { it.copy(testGenericAddResult = "失败: ${e.message}") }
+                logRepo.error("通用写入测试失败: ${e.message}")
+            }
+        }
+    }
+
     fun requestAnkiPermission() {
         // 由 Activity 发起系统权限申请；若 Activity 未能处理，再引导用户打开 AnkiDroid。
         _permissionRequest.tryEmit(AnkiDroidRepository.READ_WRITE_PERMISSION)

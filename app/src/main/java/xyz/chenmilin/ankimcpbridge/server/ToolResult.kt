@@ -48,7 +48,7 @@ data class McpInitializeResult(
     val serverInfo: JsonObject = JsonObject(
         mapOf(
             "name" to JsonPrimitive("ankidroid-mcp-bridge"),
-            "version" to JsonPrimitive("0.1.1")
+            "version" to JsonPrimitive("0.2.0")
         )
     )
 )
@@ -95,6 +95,17 @@ object BusinessErrorCodes {
     const val INVALID_FRONT = "INVALID_FRONT"
     const val INVALID_BACK = "INVALID_BACK"
     const val BATCH_TOO_LARGE = "BATCH_TOO_LARGE"
+    const val NOTE_TYPE_NOT_FOUND = "NOTE_TYPE_NOT_FOUND"
+    const val FIELD_NOT_FOUND = "FIELD_NOT_FOUND"
+    const val NO_VALID_FIELD = "NO_VALID_FIELD"
+    const val AMBIGUOUS_FIELD = "AMBIGUOUS_FIELD"
+    const val INVALID_NOTE_TYPE_ID = "INVALID_NOTE_TYPE_ID"
+    const val PERSISTENCE_CHECK_FAILED = "PERSISTENCE_CHECK_FAILED"
+    const val NOTE_TYPE_AMBIGUOUS = "NOTE_TYPE_AMBIGUOUS"
+    const val UNKNOWN_FIELD = "UNKNOWN_FIELD"
+    const val ALL_FIELDS_EMPTY = "ALL_FIELDS_EMPTY"
+    const val NOTE_TEMPLATE_READ_UNSUPPORTED = "NOTE_TEMPLATE_READ_UNSUPPORTED"
+    const val PRESET_CREATION_UNSUPPORTED = "PRESET_CREATION_UNSUPPORTED"
     const val UNAUTHORIZED = "UNAUTHORIZED"
     const val TOOL_NOT_FOUND = "TOOL_NOT_FOUND"
     const val PORT_IN_USE = "PORT_IN_USE"

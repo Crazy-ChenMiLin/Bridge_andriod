@@ -18,6 +18,8 @@ data class UiState(
     val testHealthResult: String? = null,
     val testDecksResult: String? = null,
     val testAddNoteResult: String? = null,
+    val testNoteTypesResult: String? = null,
+    val testGenericAddResult: String? = null,
 
     // 日志
     val logEntries: List<LogEntryUi> = emptyList(),

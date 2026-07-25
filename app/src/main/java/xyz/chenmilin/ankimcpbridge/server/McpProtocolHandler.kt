@@ -28,11 +28,18 @@ class McpProtocolHandler(
     }
 
     private fun registerTools() {
+        // 基础工具（连接/牌组）
         toolRegistry.register(BridgeStatusTool(ankiRepository))
         toolRegistry.register(ListDecksTool(ankiRepository))
         toolRegistry.register(EnsureDeckTool(ankiRepository))
+        // 旧 Basic 写入工具（保留兼容）
         toolRegistry.register(AddBasicNoteTool(ankiRepository))
         toolRegistry.register(AddBasicNotesTool(ankiRepository))
+        // v0.2.0 通用笔记类型读取与写入工具
+        toolRegistry.register(ListNoteTypesTool(ankiRepository))
+        toolRegistry.register(GetNoteTypeTool(ankiRepository))
+        toolRegistry.register(AddNoteTool(ankiRepository))
+        toolRegistry.register(AddNotesTool(ankiRepository))
     }
 
     fun handleRequest(body: String): String {
@@ -42,6 +49,9 @@ class McpProtocolHandler(
         } catch (e: Exception) {
             return buildErrorResponse(null, McpErrorCodes.PARSE_ERROR, "Parse error: ${e.message}")
         }
+
+        // 记录每次 MCP 请求的具体方法（不记录参数内容，避免泄露 Token 或卡片正文）。
+        logRepo.info("收到 MCP 请求: ${request.method}")
 
         return try {
             when (request.method) {
@@ -214,6 +224,6 @@ class McpProtocolHandler(
 
     companion object {
         const val SUPPORTED_PROTOCOL_VERSION = "2024-11-05"
-        const val SERVER_VERSION = "0.1.1"
+        const val SERVER_VERSION = "0.2.0"
     }
 }

@@ -42,7 +42,7 @@ AnkiDroid MCP Bridge APK
     │  │          ▼           │
     │  │  ┌────────────────┐  │
     │  │  │ Tool Registry  │  │
-    │  │  │ (5 tools)      │  │
+    │  │  │ (9 tools)      │  │
     │  │  └───────┬────────┘  │
     │  └──────────┼───────────┘
     │             ▼
@@ -74,7 +74,7 @@ AnkiDroid ContentProvider
 | Android 系统 | 8.0（API 26）及以上 |
 | MCP 客户端 | 支持 Streamable HTTP（如 RakaHub），与本机同进程/同设备 |
 | 传输 | 仅 `http://127.0.0.1`（localhost），不支持 `https`、不支持 `0.0.0.0` |
-| 最低应用版本 | v0.1.1 |
+| 最低应用版本 | v0.2.0 |
 
 ### 2. 安装本 APK
 
@@ -134,15 +134,97 @@ AnkiDroid ContentProvider
 [你的内容]
 ```
 
+### 提示词 4：按任意笔记类型写入
+
+```
+先调用 list_note_types 看我有哪些笔记类型；如果用户提到的知识点适合「MCP 面试题」，
+就调用 get_note_type 拿到字段名，生成 fields 后展示给我确认，确认后再调用 add_note 写入。
+不要在我未确认前写入。
+```
+
 ## MCP 工具
+
+共 9 个工具。基础连接/牌组工具 3 个、Basic 写入工具 2 个（保留兼容）、v0.2.0 新增通用笔记类型工具 4 个。
 
 | 工具名 | 功能 |
 |--------|------|
 | `bridge_status` | 获取服务状态和 AnkiDroid 连接状态 |
 | `list_decks` | 列出所有牌组 |
 | `ensure_deck` | 确保牌组存在（自动创建） |
-| `add_basic_note` | 添加单张 Basic 卡片 |
-| `add_basic_notes` | 批量添加 Basic 卡片（最多 100 张）。返回 `requested/submitted/succeeded/failed`；批量路径下 `noteIdsAvailable=false`（不返回单个 noteId，详见下方说明） |
+| `add_basic_note` | 添加单张 Basic 卡片（Front/Back） |
+| `add_basic_notes` | 批量添加 Basic 卡片（最多 100 张），返回 `requested/submitted/succeeded/failed`；批量路径下 `noteIdsAvailable=false`（不返回单个 noteId） |
+| `list_note_types` | 列出本机全部笔记类型（Note Type / Model），含 ID、名称、有序字段、类型（normal/cloze/unknown）与卡片模板数量 |
+| `get_note_type` | 获取指定 `noteTypeId` 的完整详情：有序字段、类型、CSS（可能为空）、卡片模板（正面/背面，可能为空列表） |
+| `add_note` | 按指定 `noteTypeId` 写入一张**任意字段**笔记；字段名需与 `list_note_types`/`get_note_type` 一致；未知字段/全空会被拒绝；写入后回读验证持久化并通知 AnkiDroid 本地刷新 |
+| `add_notes` | 批量按任意笔记类型写入多张笔记（最多 100 张），每条可独立指定 `noteTypeId`/`fields`/`tags`；共享同一 `deck`；返回 `requested/submitted/succeeded/failed/errors` 及 `persisted`/`refreshNotified` |
+
+> **旧工具保留**：`add_basic_note` / `add_basic_notes` 继续可用，内部已复用通用写入链路（写入 / 卡片移组 / 回读验证 / 刷新通知）。
+
+### 通用写入返回字段（add_note / add_notes）
+
+| 字段 | 含义 |
+|------|------|
+| `success` | 单张：是否写入成功；批量：整体是否进入批量插入 |
+| `noteId` | 单张成功时的 noteId；批量恒为 `null`（批量插入不返回单个 ID） |
+| `persisted` | 写入后回读验证是否成功（数据已落库可读回）。`persisted=false` 表示写入未通过验证 |
+| `refreshNotified` | 是否已发送本地数据变更通知（`ContentResolver.notifyChange`）。**不代表 AnkiWeb 云同步** |
+| `failed` / `errors` | 批量：失败数与每条失败的原始下标 `index` + 错误码 `code` |
+
+### 字段映射规则（add_note / add_notes）
+
+- 实际写入顺序**严格按笔记类型的字段顺序**生成，与请求 `fields` 的 Map 遍历顺序无关；
+- 未提供的合法字段写入空字符串；
+- 请求中出现**不存在的字段会被拒绝**（返回业务错误 `FIELD_NOT_FOUND`，`isError=true`）；
+- 至少有一个非空字段，否则拒绝（`NO_VALID_FIELD`）；
+- 字段名匹配优先严格匹配，其次忽略大小写；忽略大小写后一个字段匹配到多个输入键会报歧义（`AMBIGUOUS_FIELD`）；
+- Cloze 类型**不强制** Front/Back 规则，底层不会擅自修改用户内容。
+
+## 推荐 Agent 流程（通用写入）
+
+在不知道字段结构时，**不要**直接调用 `add_note`。推荐流程：
+
+1. 调用 `list_note_types`，展示可用笔记类型；
+2. 根据用户需求挑选合适的 `noteTypeId`；
+3. 调用 `get_note_type` 获取该类型的**有序字段名**；
+4. 依据字段名生成 `fields`（键名必须与返回一致）；
+5. **写入前向用户展示卡片内容**，获得确认；
+6. 用户确认后调用 `add_note`（单张）或 `add_notes`（批量）；
+7. 检查返回中的 `persisted` 与 `refreshNotified`：
+   - `persisted=true`：数据已确认落库；
+   - `refreshNotified=true`：已通知 AnkiDroid 刷新（本地刷新，见下）。
+
+## 关于「同步」的边界
+
+本应用 v0.2.0 的写入闭环包含两步：
+
+1. **确认数据已保存**：写入后通过 ContentProvider 回读验证（`persisted`）；
+2. **本地刷新通知**：通过 `ContentResolver.notifyChange` 通知 AnkiDroid 数据变化。
+
+这两步属于**本地刷新通知，不是 AnkiWeb 云同步**。本应用：
+
+- ❌ 不实现 `sync_ankiweb`；
+- ❌ 不使用无障碍模拟点击 AnkiDroid 的同步按钮；
+- ❌ 不调用未公开或不稳定的私有同步 API；
+- ❌ 不直接读写 AnkiDroid 私有数据库。
+
+AnkiWeb 云同步仍由 **AnkiDroid 自身的自动同步或手动同步**负责。Bridge 只负责本地写入与刷新通知；`refreshNotified=true` 仅代表已发送数据变更通知，不保证所有 AnkiDroid 版本当前页面立即刷新。
+
+## 预置笔记类型（手动创建）
+
+本应用仅依赖本地 `com.ichi2.anki.FlashCardsContract` 副本。其公开 API 支持创建「带自定义字段的笔记类型」（写入 `NAME` + `FIELD_NAMES`），**但不支持**创建自定义卡片模板（正面/背面 HTML）或 CSS。因此本应用**不会自动创建**预置模板，也不会操作私有数据库绕过该限制。
+
+你可以在 AnkiDroid 中手动创建以下 4 个笔记类型（字段顺序需与下表一致，否则 `add_note` 会按实际字段名映射）：
+
+| 预置键 | 建议名称 | 有序字段 |
+|--------|----------|----------|
+| `general` | MCP 通用问答 | 问题、答案、补充、来源 |
+| `interview` | MCP 面试题 | 问题、简答、详细回答、案例、追问、来源 |
+| `algorithm` | MCP 算法题 | 题目、核心思路、复杂度、Java代码、易错点、来源 |
+| `troubleshooting` | MCP 错误排查 | 现象、根因、排查过程、解决方案、预防 |
+
+> 即使不创建这些预置类型，`add_note` / `add_notes` 也完全支持你在 AnkiDroid 中**自行创建**的任意笔记类型——只要先 `list_note_types` 拿到 `noteTypeId` 与字段名即可。
+
+代码定义见 `app/src/main/java/xyz/chenmilin/ankimcpbridge/anki/PresetNoteTypes.kt`（含建议的正面/背面模板，仅作文档与手动创建参考）。
 
 ## 批量添加的 Note ID 限制
 
@@ -188,7 +270,7 @@ Release 工作流（`.github/workflows/release.yml`）在推送 `v*` tag 时触�
 - `AnkiDroid-MCP-Bridge-<TAG>-debug.apk`（未签名 debug）
 - `AnkiDroid-MCP-Bridge-<TAG>-release.apk`（若提供签名密钥则签名）
 
-版本号由 tag 驱动：`v0.1.1` → `versionName="0.1.1"`、`versionCode=101`
+版本号由 tag 驱动：`v0.2.0` → `versionName="0.2.0"`、`versionCode=200`
 （计算规则 `major*10000 + minor*100 + patch`），无需手动修改 `build.gradle.kts`。
 
 如需产出**签名**的 release APK，在仓库 `Settings → Secrets` 配置以下四个密钥：
