@@ -106,10 +106,10 @@ class McpProtocolTest {
         val toolNames = response.result!!.jsonObject["tools"]!!.jsonArray
             .map { it.jsonObject["name"]!!.jsonPrimitive.content }
 
-        assertEquals("tools/list 应只暴露当前文档声明的 44 个真实支持工具", 44, toolNames.size)
+        assertEquals("tools/list 应只暴露当前文档声明的 45 个真实支持工具", 45, toolNames.size)
         assertTrue(toolNames.containsAll(
             listOf(
-                "listDecks", "deckNames", "deckNamesAndIds", "createDeck",
+                "version", "listDecks", "deckNames", "deckNamesAndIds", "createDeck",
                 "modelNames", "modelNamesAndIds", "modelFieldNames", "addNote", "addNotes", "canAddNotes",
                 "findNotes", "findCards", "notesInfo", "cardsInfo", "cardsToNotes",
                 "getDecks", "suspend", "areSuspended", "areDue", "getIntervals",
@@ -121,6 +121,8 @@ class McpProtocolTest {
         ))
         assertFalse("Android 不应暴露 PC GUI 占位工具", toolNames.contains("guiBrowse"))
         assertFalse("Android 不应暴露未实现的模型编辑占位工具", toolNames.contains("createModel"))
+        assertFalse("Android 不应暴露 PC 插件升级工具", toolNames.contains("upgrade"))
+        assertFalse("Android 不应暴露 HTTP 批处理占位工具", toolNames.contains("multi"))
     }
 
     // ─── tools/call bridge_status ───
@@ -237,6 +239,16 @@ class McpProtocolTest {
 
     @Test
     fun `pc compatible modelNames and modelFieldNames work`() = runTest {
+        val versionResponse = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf("name" to "version"))
+        ))
+        assertNull(versionResponse.error)
+        assertFalse(versionResponse.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val version = Json.parseToJsonElement(
+            versionResponse.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonPrimitive.int
+        assertEquals(5, version)
+
         val namesResponse = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf("name" to "modelNames"))
         ))

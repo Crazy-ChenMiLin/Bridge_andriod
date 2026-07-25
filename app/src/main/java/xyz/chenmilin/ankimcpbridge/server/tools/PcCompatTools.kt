@@ -84,6 +84,17 @@ private fun jsonLongOrNull(value: Long?): JsonElement =
 private fun jsonIntOrNull(value: Int?): JsonElement =
     value?.let { JsonPrimitive(it) } ?: JsonNull
 
+class PcVersionTool : McpTool {
+    override val definition = McpToolDef(
+        name = "version",
+        description = "PC AnkiConnect compatible: report the compatible AnkiConnect API version.",
+        inputSchema = emptySchema()
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult =
+        McpToolCallResult(listOf(McpToolContent(text = JsonPrimitive(5).toString())))
+}
+
 private fun cardToJson(card: AnkiCardInfo, showAnswer: Boolean = true): JsonObject {
     val values = mutableMapOf<String, JsonElement>(
         "cardId" to JsonPrimitive(card.id),
