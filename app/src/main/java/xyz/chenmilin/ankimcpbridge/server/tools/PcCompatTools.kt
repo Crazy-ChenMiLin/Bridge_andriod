@@ -992,7 +992,7 @@ class PcUpdateNoteFieldsTool(private val ankiRepository: AnkiRepository) : McpTo
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: note.fields")
         return try {
             val updated = ankiRepository.updateNoteFields(id, fields)
-            McpToolCallResult(listOf(McpToolContent(text = JsonObject(mapOf("updated" to JsonPrimitive(updated))).toString())), isError = !updated)
+            McpToolCallResult(listOf(McpToolContent(text = JsonNull.toString())), isError = !updated)
         } catch (e: Exception) {
             pcExceptionError(e)
         }
@@ -1050,8 +1050,8 @@ abstract class PcTagMutationTool(
         val tags = arguments["tags"]?.jsonPrimitive?.content?.split(" ")?.filter { it.isNotBlank() }
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: tags")
         return try {
-            val updated = if (add) ankiRepository.addTags(ids, tags) else ankiRepository.removeTags(ids, tags)
-            McpToolCallResult(listOf(McpToolContent(text = JsonObject(mapOf("updated" to JsonPrimitive(updated))).toString())))
+            if (add) ankiRepository.addTags(ids, tags) else ankiRepository.removeTags(ids, tags)
+            McpToolCallResult(listOf(McpToolContent(text = JsonNull.toString())))
         } catch (e: Exception) {
             pcExceptionError(e)
         }
@@ -1335,8 +1335,8 @@ class PcChangeDeckTool(private val ankiRepository: AnkiRepository) : McpTool {
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: deck")
         if (deck.isBlank()) return pcBusinessError(BusinessErrorCodes.DECK_NAME_EMPTY, "deck 不能为空")
         return try {
-            val updated = ankiRepository.changeDeck(cards, deck)
-            McpToolCallResult(listOf(McpToolContent(text = JsonObject(mapOf("updated" to JsonPrimitive(updated))).toString())))
+            ankiRepository.changeDeck(cards, deck)
+            McpToolCallResult(listOf(McpToolContent(text = JsonNull.toString())))
         } catch (e: Exception) {
             pcExceptionError(e)
         }

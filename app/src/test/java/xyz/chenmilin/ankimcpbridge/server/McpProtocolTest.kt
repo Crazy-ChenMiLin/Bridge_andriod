@@ -654,7 +654,7 @@ class McpProtocolTest {
                 "name" to "addTags",
                 "arguments" to mapOf("notes" to listOf(noteId), "tags" to "flow-added")
             ))
-        )).also { assertFalse(it.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean) }
+        )).also { assertPcNullSuccess(it) }
 
         val tags = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf("name" to "getTags", "arguments" to mapOf("pattern" to "flow")))
@@ -687,14 +687,14 @@ class McpProtocolTest {
                 "arguments" to mapOf("note" to mapOf("id" to noteId, "fields" to mapOf("Front" to "Updated front")))
             ))
         ))
-        assertFalse(update.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        assertPcNullSuccess(update)
 
         parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(
                 "name" to "removeTags",
                 "arguments" to mapOf("notes" to listOf(noteId), "tags" to "flow-renamed")
             ))
-        )).also { assertFalse(it.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean) }
+        )).also { assertPcNullSuccess(it) }
     }
 
     @Test
@@ -875,7 +875,7 @@ class McpProtocolTest {
                 "name" to "changeDeck",
                 "arguments" to mapOf("cards" to listOf(cardId), "deck" to "PC Cards Moved")
             ))
-        )).also { assertFalse(it.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean) }
+        )).also { assertPcNullSuccess(it) }
 
         val rate = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(
@@ -1803,6 +1803,14 @@ class McpProtocolTest {
         return listJson["noteTypes"]!!.jsonArray.first {
             it.jsonObject["name"]!!.jsonPrimitive.content == "Basic"
         }.jsonObject["id"]!!.jsonPrimitive.long
+    }
+
+    private fun assertPcNullSuccess(response: JsonRpcResponse) {
+        assertNull(response.error)
+        val result = response.result!!.jsonObject
+        assertFalse(result["isError"]!!.jsonPrimitive.boolean)
+        val text = result["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        assertEquals(JsonNull, Json.parseToJsonElement(text))
     }
 
     private fun assertDeckNameEmpty(response: JsonRpcResponse) {

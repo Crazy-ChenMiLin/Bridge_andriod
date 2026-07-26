@@ -89,6 +89,7 @@
 PC 兼容别名会尽量同时识别常见驼峰/下划线参数，例如 `deckName`/`deck_name`、`modelName`/`model_name`、`cardId`/`card_id`、`showAnswer`/`show_answer`。
 
 `getIntervals` 只返回当前卡片最近一次间隔；AnkiDroid 公开 API 不提供完整复习历史，所以 `complete=true` 会返回明确错误。
+`changeDeck`、`addTags`、`removeTags`、`updateNoteFields` 成功时按 AnkiConnect 习惯返回 `null`；如果底层安卓写入失败，会通过 `isError=true` 返回明确错误。
 
 ### 安卓端不暴露的 PC 专属能力
 
