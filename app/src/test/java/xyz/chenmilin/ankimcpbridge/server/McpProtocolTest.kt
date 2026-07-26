@@ -1105,7 +1105,8 @@ class McpProtocolTest {
         assertEquals(10, result["requested"]!!.jsonPrimitive.int)
         assertEquals(10, result["submitted"]!!.jsonPrimitive.int)
         assertEquals(10, result["succeeded"]!!.jsonPrimitive.int)
-        assertEquals(false, result["noteIdsAvailable"]!!.jsonPrimitive.boolean)
+        assertEquals(true, result["noteIdsAvailable"]!!.jsonPrimitive.boolean)
+        assertEquals(10, result["noteIds"]!!.jsonArray.size)
     }
 
     // ─── 结构性 / 协议错误 ───
@@ -1436,6 +1437,8 @@ class McpProtocolTest {
         assertEquals(3, batch["requested"]!!.jsonPrimitive.int)
         assertEquals(3, batch["succeeded"]!!.jsonPrimitive.int)
         assertEquals(0, batch["failed"]!!.jsonPrimitive.int)
+        assertEquals(true, batch["noteIdsAvailable"]!!.jsonPrimitive.boolean)
+        assertEquals(3, batch["noteIds"]!!.jsonArray.size)
     }
 
     @Test

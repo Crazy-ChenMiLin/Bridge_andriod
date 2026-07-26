@@ -101,8 +101,9 @@ class FakeAnkiRepositoryTest {
         assertEquals(3, result.succeeded)
         assertEquals(0, result.failed)
         // 批量路径不暴露 noteId（与真实实现契约一致）
-        assertEquals(false, result.noteIdsAvailable)
-        assertEquals(0, result.noteIds.size)
+        assertEquals(true, result.noteIdsAvailable)
+        assertEquals(3, result.noteIds.size)
+        assertTrue(result.noteIds.all { it > 0 })
     }
 
     @Test
@@ -423,6 +424,9 @@ class FakeAnkiRepositoryTest {
         assertEquals(5, result.submitted)
         assertEquals(5, result.succeeded)
         assertEquals(0, result.failed)
+        assertTrue(result.noteIdsAvailable)
+        assertEquals(5, result.noteIds.size)
+        assertTrue(result.noteIds.all { it > 0 })
         assertTrue(result.persisted)
         assertTrue(result.refreshNotified)
     }

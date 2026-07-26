@@ -644,46 +644,44 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                 )
             }
 
-            // 2) 按 noteTypeId 分组，逐模型单独 bulkInsert（避免一次全局混合 bulkInsert 无法区分各模型成功数）
-            val groups: Map<Long, ModelBatchPlan<ContentValues>> = validPlans
-                .groupBy { it.noteTypeId }
-                .mapValues { (noteTypeId, plans) ->
-                    ModelBatchPlan(
-                        noteTypeId = noteTypeId,
-                        values = plans.map { buildGenericValues(it.noteTypeId, it.fields, it.tags) },
-                        originalIndexes = plans.map { it.index }
-                    )
-                }
-
             return@withContext addMutex.withLock {
-                // 逐模型批量插入（纯函数协调器，真实插入由 lambda 注入）
-                val summary = executeBatchInsert(groups) { _, values ->
-                    appContext.contentResolver.bulkInsert(
-                        FlashCardsContract.Note.CONTENT_URI, values.toTypedArray()
-                    )
+                val noteIds = mutableListOf<Long>()
+                val writeErrors = mutableListOf<BatchError>()
+                var persisted = true
+
+                validPlans.forEach { plan ->
+                    val noteId = addGenericNoteRow(plan.noteTypeId, deck.id, plan.fields, plan.tags)
+                    if (noteId == null) {
+                        persisted = false
+                        writeErrors.add(BatchError(plan.index, AnkiErrors.ADD_NOTE_FAILED, "notes[${plan.index}] write failed"))
+                        return@forEach
+                    }
+
+                    if (verifyNotePersisted(noteId, plan.noteTypeId, plan.fields)) {
+                        noteIds.add(noteId)
+                    } else {
+                        persisted = false
+                        writeErrors.add(
+                            BatchError(
+                                plan.index,
+                                AnkiErrors.PERSISTENCE_CHECK_FAILED,
+                                "notes[${plan.index}] returned noteId=$noteId but readback verification failed"
+                            )
+                        )
+                    }
                 }
 
-                // 3) 只移动各模型“实际插入成功”的数量（修正部分插入时误移写入前的旧卡片）
-                for ((noteTypeId, inserted) in summary.insertedByModel) {
-                    if (inserted > 0) moveRecentNotesToDeck(noteTypeId, inserted, deck.id)
-                }
-
-                // 4) 回读验证持久化（基于各模型实际插入数量，best-effort）
-                val persisted = verifyRecentNotesPersisted(summary.insertedByModel)
-
-                // 5) 本地刷新通知
-                val refreshNotified = notifyAnkiChanged()
-
-                val succeeded = summary.totalInserted
+                val refreshNotified = if (noteIds.isNotEmpty()) notifyAnkiChanged() else false
+                val succeeded = noteIds.size
                 BatchAddGenericResult(
                     requested = requested,
                     submitted = submitted,
                     succeeded = succeeded,
                     failed = calculateBatchFailed(requested, succeeded),
-                    noteIds = emptyList(),
-                    noteIdsAvailable = false,
-                    errors = errors + summary.insertErrors,
-                    persisted = persisted,
+                    noteIds = noteIds,
+                    noteIdsAvailable = true,
+                    errors = errors + writeErrors,
+                    persisted = succeeded > 0 && persisted,
                     refreshNotified = refreshNotified,
                     deckId = deck.id,
                     deckCreated = deck.created
@@ -973,24 +971,24 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
             logRepo.info("add_basic_notes 请求参数摘要: deck=${deck.name}, deckCreated=${deck.created}, noteCount=${request.notes.size}")
             val modelId = AnkiModelResolver.resolveBasicModelId(appContext)
 
-            // 1) 预校验：不通过校验的卡片不会进入批量插入，记录原始下标。
-            val valuesList = mutableListOf<ContentValues>()
+            // Pre-validate and keep original indexes for per-note error mapping.
+            val validNotes = mutableListOf<Pair<Int, SingleNoteRequest>>()
             val errors = mutableListOf<BatchError>()
             request.notes.forEachIndexed { index, note ->
                 when {
                     note.front.isBlank() ->
-                        errors.add(BatchError(index, AnkiErrors.INVALID_FRONT, "第 ${index + 1} 张卡片 front 不能为空"))
+                        errors.add(BatchError(index, AnkiErrors.INVALID_FRONT, "notes[$index].front is empty"))
                     note.back.isBlank() ->
-                        errors.add(BatchError(index, AnkiErrors.INVALID_BACK, "第 ${index + 1} 张卡片 back 不能为空"))
+                        errors.add(BatchError(index, AnkiErrors.INVALID_BACK, "notes[$index].back is empty"))
                     note.front.length > 10000 ->
-                        errors.add(BatchError(index, AnkiErrors.INVALID_FRONT, "第 ${index + 1} 张卡片 front 过长"))
+                        errors.add(BatchError(index, AnkiErrors.INVALID_FRONT, "notes[$index].front is too long"))
                     note.back.length > 10000 ->
-                        errors.add(BatchError(index, AnkiErrors.INVALID_BACK, "第 ${index + 1} 张卡片 back 过长"))
-                    else -> valuesList.add(buildNoteValues(modelId, note))
+                        errors.add(BatchError(index, AnkiErrors.INVALID_BACK, "notes[$index].back is too long"))
+                    else -> validNotes.add(index to note)
                 }
             }
 
-            val submitted = valuesList.size
+            val submitted = validNotes.size
             if (submitted == 0) {
                 return@withContext BatchAddResult(
                     requested = request.notes.size,
@@ -1003,48 +1001,43 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
                 )
             }
 
-            // 2) 真批量插入：单次 bulkInsert（等价官方 AddContentApi.addNotes），而非循环 insert。
-            val valuesArray = valuesList.toTypedArray()
+            // Use the verified single-note insert path so batch output has real note IDs.
             addMutex.withLock {
-                val inserted = appContext.contentResolver.bulkInsert(
-                    FlashCardsContract.Note.CONTENT_URI, valuesArray
-                )
-                if (inserted < 0) {
-                    // 批量整体失败：bulkInsert 返回负值。
-                    return@withLock BatchAddResult(
-                        requested = request.notes.size,
-                        submitted = submitted,
-                        succeeded = 0,
-                        failed = request.notes.size,
-                        noteIds = emptyList(),
-                        noteIdsAvailable = false,
-                        errors = errors + BatchError(
-                            -1, AnkiErrors.BATCH_FAILED, "批量插入失败（bulkInsert 返回 $inserted）"
+                val noteIds = mutableListOf<Long>()
+                val writeErrors = mutableListOf<BatchError>()
+
+                validNotes.forEach { (index, note) ->
+                    val fields = listOf(note.front, note.back)
+                    val tags = note.tags.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+                    val noteId = addGenericNoteRow(modelId, deck.id, fields, tags)
+                    if (noteId == null) {
+                        writeErrors.add(BatchError(index, AnkiErrors.ADD_NOTE_FAILED, "notes[$index] write failed"))
+                        return@forEach
+                    }
+
+                    if (verifyNotePersisted(noteId, modelId, fields)) {
+                        noteIds.add(noteId)
+                    } else {
+                        writeErrors.add(
+                            BatchError(
+                                index,
+                                AnkiErrors.PERSISTENCE_CHECK_FAILED,
+                                "notes[$index] returned noteId=$noteId but readback verification failed"
+                            )
                         )
-                    )
+                    }
                 }
 
-                // 3) 把本次插入的卡片移动到目标牌组（best-effort：取本模型下最新 inserted 张笔记）。
-                moveRecentNotesToDeck(modelId, inserted, deck.id)
-
-                val partial = if (inserted < submitted) {
-                    listOf(
-                        BatchError(
-                            -1, AnkiErrors.PARTIAL_FAILURE,
-                            "部分失败：submitted=$submitted, succeeded=$inserted"
-                        )
-                    )
-                } else {
-                    emptyList()
-                }
+                val succeeded = noteIds.size
+                if (noteIds.isNotEmpty()) notifyAnkiChanged()
                 return@withLock BatchAddResult(
                     requested = request.notes.size,
                     submitted = submitted,
-                    succeeded = inserted,
-                    failed = submitted - inserted,
-                    noteIds = emptyList(),
-                    noteIdsAvailable = false,
-                    errors = errors + partial
+                    succeeded = succeeded,
+                    failed = calculateBatchFailed(request.notes.size, succeeded),
+                    noteIds = noteIds,
+                    noteIdsAvailable = true,
+                    errors = errors + writeErrors
                 )
             }
         }

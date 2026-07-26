@@ -150,8 +150,8 @@ class FakeAnkiRepository : AnkiRepository {
             submitted = succeededIds.size,
             succeeded = succeededIds.size,
             failed = calculateBatchFailed(request.notes.size, succeededIds.size),
-            noteIds = emptyList(),
-            noteIdsAvailable = false,
+            noteIds = succeededIds,
+            noteIdsAvailable = true,
             errors = errors
         )
     }
@@ -261,6 +261,7 @@ class FakeAnkiRepository : AnkiRepository {
         }
 
         // 3) 按各模型“实际插入数量”写入内存（只写 inserted 条，不写计划全部）
+        val noteIds = mutableListOf<Long>()
         for ((noteTypeId, inserted) in summary.insertedByModel) {
             if (inserted <= 0) continue
             val plans = grouped[noteTypeId] ?: continue
@@ -268,6 +269,7 @@ class FakeAnkiRepository : AnkiRepository {
             for (i in 0 until inserted) {
                 val p = plans[i]
                 val noteId = nextNoteId++
+                noteIds.add(noteId)
                 notes.add(
                     FakeNote(
                         id = noteId, deckId = deck.id, noteTypeId = noteTypeId,
@@ -295,8 +297,8 @@ class FakeAnkiRepository : AnkiRepository {
             submitted = submitted,
             succeeded = succeeded,
             failed = calculateBatchFailed(requested, succeeded),
-            noteIds = emptyList(),
-            noteIdsAvailable = false,
+            noteIds = noteIds,
+            noteIdsAvailable = true,
             errors = errors + summary.insertErrors,
             persisted = persisted,
             refreshNotified = refreshNotified,
