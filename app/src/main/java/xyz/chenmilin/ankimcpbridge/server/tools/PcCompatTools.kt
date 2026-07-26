@@ -430,6 +430,36 @@ class PcCreateDeckTool(private val ankiRepository: AnkiRepository) : McpTool {
     }
 }
 
+class PcGetDeckConfigTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "getDeckConfig",
+        description = "PC AnkiConnect compatible: read the deck options object exposed by AnkiDroid.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(mapOf("deck" to JsonObject(mapOf("type" to JsonPrimitive("string"))))),
+                "required" to JsonArray(listOf(JsonPrimitive("deck")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val deckName = arguments?.stringValue("deck", "deckName", "deck_name")
+            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: deck")
+        if (deckName.isBlank()) return pcBusinessError(BusinessErrorCodes.DECK_NAME_EMPTY, "deck 不能为空")
+        return try {
+            val deck = ankiRepository.listDecks().firstOrNull { it.name.equals(deckName.trim(), ignoreCase = true) }
+                ?: return pcBusinessError(BusinessErrorCodes.DECK_OPERATION_FAILED, "牌组不存在: $deckName")
+            val options = deck.optionsJson?.takeIf { it.isNotBlank() }
+                ?: return pcBusinessError(BusinessErrorCodes.ANKI_API_UNAVAILABLE, "AnkiDroid 未返回该牌组的 options")
+            val json = Json.parseToJsonElement(options)
+            McpToolCallResult(listOf(McpToolContent(text = json.toString())))
+        } catch (e: Exception) {
+            pcExceptionError(e)
+        }
+    }
+}
+
 class PcModelNamesTool(private val ankiRepository: AnkiRepository) : McpTool {
     override val definition = McpToolDef(
         name = "modelNames",

@@ -90,7 +90,8 @@ class FakeAnkiRepository : AnkiRepository {
         val existing = decks.find { it.name.equals(trimmed, ignoreCase = true) }
         if (existing != null) return existing.copy(created = false)
 
-        val deck = AnkiDeck(id = nextDeckId++, name = trimmed, created = true)
+        val deckId = nextDeckId++
+        val deck = AnkiDeck(id = deckId, name = trimmed, optionsJson = """{"id":$deckId,"name":"Default"}""", created = true)
         decks.add(deck)
         return deck
     }

@@ -1069,10 +1069,12 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         )?.use { cursor ->
             val idIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.Deck.DECK_ID)
             val nameIdx = cursor.getColumnIndexOrThrow(FlashCardsContract.Deck.DECK_NAME)
+            val optionsIdx = cursor.getColumnIndex(FlashCardsContract.Deck.OPTIONS)
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idIdx)
                 val name = cursor.getString(nameIdx) ?: continue
-                decks.add(AnkiDeck(id = id, name = name))
+                val options = if (optionsIdx >= 0 && !cursor.isNull(optionsIdx)) cursor.getString(optionsIdx) else null
+                decks.add(AnkiDeck(id = id, name = name, optionsJson = options))
             }
         }
         return decks

@@ -3,6 +3,7 @@ package xyz.chenmilin.ankimcpbridge.anki
 data class AnkiDeck(
     val id: Long,
     val name: String,
+    val optionsJson: String? = null,
     /** 本次调用是否实际创建了该牌组（true=新建，false=复用已有）。 */
     val created: Boolean = false
 )

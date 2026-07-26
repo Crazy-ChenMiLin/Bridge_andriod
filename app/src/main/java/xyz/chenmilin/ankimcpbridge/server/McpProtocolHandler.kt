@@ -52,6 +52,7 @@ class McpProtocolHandler(
         toolRegistry.register(PcDeckNamesTool(ankiRepository))
         toolRegistry.register(PcDeckNamesAndIdsTool(ankiRepository))
         toolRegistry.register(PcCreateDeckTool(ankiRepository))
+        toolRegistry.register(PcGetDeckConfigTool(ankiRepository))
         toolRegistry.register(PcModelNamesTool(ankiRepository))
         toolRegistry.register(PcModelNamesAndIdsTool(ankiRepository))
         toolRegistry.register(PcModelFieldNamesTool(ankiRepository))

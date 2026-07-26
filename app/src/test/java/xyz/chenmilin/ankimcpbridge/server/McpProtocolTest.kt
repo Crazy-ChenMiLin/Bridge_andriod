@@ -106,10 +106,11 @@ class McpProtocolTest {
         val toolNames = response.result!!.jsonObject["tools"]!!.jsonArray
             .map { it.jsonObject["name"]!!.jsonPrimitive.content }
 
-        assertEquals("tools/list 应只暴露当前文档声明的 46 个真实支持工具", 46, toolNames.size)
+        assertEquals("tools/list 应只暴露当前文档声明的 47 个真实支持工具", 47, toolNames.size)
         assertTrue(toolNames.containsAll(
             listOf(
                 "version", "multi", "listDecks", "deckNames", "deckNamesAndIds", "createDeck",
+                "getDeckConfig",
                 "modelNames", "modelNamesAndIds", "modelFieldNames", "addNote", "addNotes", "canAddNotes",
                 "findNotes", "findCards", "notesInfo", "cardsInfo", "cardsToNotes",
                 "getDecks", "suspend", "areSuspended", "areDue", "getIntervals",
@@ -337,6 +338,18 @@ class McpProtocolTest {
         ))
         assertNull(deck.error)
         assertFalse(deck.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+
+        val config = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "getDeckConfig",
+                "arguments" to mapOf("deck" to "PC Alias Deck")
+            ))
+        ))
+        assertFalse(config.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val configJson = Json.parseToJsonElement(
+            config.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals("Default", configJson["name"]!!.jsonPrimitive.content)
 
         val fields = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(
