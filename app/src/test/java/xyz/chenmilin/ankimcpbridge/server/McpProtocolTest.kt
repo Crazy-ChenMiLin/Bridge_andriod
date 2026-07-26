@@ -106,10 +106,10 @@ class McpProtocolTest {
         val toolNames = response.result!!.jsonObject["tools"]!!.jsonArray
             .map { it.jsonObject["name"]!!.jsonPrimitive.content }
 
-        assertEquals("tools/list 应只暴露当前文档声明的 45 个真实支持工具", 45, toolNames.size)
+        assertEquals("tools/list 应只暴露当前文档声明的 46 个真实支持工具", 46, toolNames.size)
         assertTrue(toolNames.containsAll(
             listOf(
-                "version", "listDecks", "deckNames", "deckNamesAndIds", "createDeck",
+                "version", "multi", "listDecks", "deckNames", "deckNamesAndIds", "createDeck",
                 "modelNames", "modelNamesAndIds", "modelFieldNames", "addNote", "addNotes", "canAddNotes",
                 "findNotes", "findCards", "notesInfo", "cardsInfo", "cardsToNotes",
                 "getDecks", "suspend", "areSuspended", "areDue", "getIntervals",
@@ -122,7 +122,6 @@ class McpProtocolTest {
         assertFalse("Android 不应暴露 PC GUI 占位工具", toolNames.contains("guiBrowse"))
         assertFalse("Android 不应暴露未实现的模型编辑占位工具", toolNames.contains("createModel"))
         assertFalse("Android 不应暴露 PC 插件升级工具", toolNames.contains("upgrade"))
-        assertFalse("Android 不应暴露 HTTP 批处理占位工具", toolNames.contains("multi"))
     }
 
     // ─── tools/call bridge_status ───
@@ -248,6 +247,28 @@ class McpProtocolTest {
             versionResponse.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
         ).jsonPrimitive.int
         assertEquals(5, version)
+
+        ankiRepo.ensureDeck("Multi Deck")
+        val multiResponse = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "multi",
+                "arguments" to mapOf(
+                    "actions" to listOf(
+                        mapOf("action" to "version"),
+                        mapOf("action" to "deckNames"),
+                        mapOf("action" to "guiBrowse", "params" to mapOf("query" to "*"))
+                    )
+                )
+            ))
+        ))
+        assertNull(multiResponse.error)
+        assertFalse(multiResponse.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val multi = Json.parseToJsonElement(
+            multiResponse.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonArray
+        assertEquals(5, multi[0].jsonPrimitive.int)
+        assertTrue(multi[1].jsonArray.map { it.jsonPrimitive.content }.contains("Multi Deck"))
+        assertTrue(multi[2].jsonObject["error"]!!.jsonPrimitive.content.contains("unsupported action"))
 
         val namesResponse = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf("name" to "modelNames"))

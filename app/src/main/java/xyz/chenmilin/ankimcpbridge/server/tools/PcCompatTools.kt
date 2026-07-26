@@ -1,5 +1,6 @@
 package xyz.chenmilin.ankimcpbridge.server.tools
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -23,6 +24,7 @@ import xyz.chenmilin.ankimcpbridge.server.McpTool
 import xyz.chenmilin.ankimcpbridge.server.McpToolCallResult
 import xyz.chenmilin.ankimcpbridge.server.McpToolContent
 import xyz.chenmilin.ankimcpbridge.server.McpToolDef
+import xyz.chenmilin.ankimcpbridge.server.ToolRegistry
 
 private fun emptySchema(): JsonObject = JsonObject(
     mapOf(
@@ -93,6 +95,94 @@ class PcVersionTool : McpTool {
 
     override suspend fun call(arguments: JsonObject?): McpToolCallResult =
         McpToolCallResult(listOf(McpToolContent(text = JsonPrimitive(5).toString())))
+}
+
+class PcMultiTool(private val toolRegistry: ToolRegistry) : McpTool {
+    override val definition = McpToolDef(
+        name = "multi",
+        description = "PC AnkiConnect compatible: run multiple supported actions in order.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(
+                    mapOf(
+                        "actions" to JsonObject(
+                            mapOf(
+                                "type" to JsonPrimitive("array"),
+                                "items" to JsonObject(mapOf("type" to JsonPrimitive("object")))
+                            )
+                        )
+                    )
+                ),
+                "required" to JsonArray(listOf(JsonPrimitive("actions")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val actions = arguments?.get("actions")?.jsonArray
+            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: actions")
+        if (actions.size > 100) {
+            return pcBusinessError(BusinessErrorCodes.BATCH_TOO_LARGE, "multi 一次最多执行 100 个 action")
+        }
+        val results = actions.mapIndexed { index, element ->
+            val action = element.jsonObject["action"]?.jsonPrimitive?.content
+            if (action.isNullOrBlank()) {
+                return@mapIndexed JsonObject(
+                    mapOf(
+                        "error" to JsonPrimitive("actions[$index].action is required"),
+                        "code" to JsonPrimitive(BusinessErrorCodes.INVALID_ARGUMENT)
+                    )
+                )
+            }
+            if (action == definition.name) {
+                return@mapIndexed JsonObject(
+                    mapOf(
+                        "error" to JsonPrimitive("nested multi is not supported"),
+                        "code" to JsonPrimitive(BusinessErrorCodes.INVALID_ARGUMENT)
+                    )
+                )
+            }
+            val tool = toolRegistry.getTool(action)
+                ?: return@mapIndexed JsonObject(
+                    mapOf(
+                        "error" to JsonPrimitive("unsupported action: $action"),
+                        "code" to JsonPrimitive(BusinessErrorCodes.TOOL_NOT_FOUND)
+                    )
+                )
+            val params = element.jsonObject["params"]?.jsonObject
+            try {
+                val result = tool.call(params)
+                val text = result.content.firstOrNull()?.text ?: JsonNull.toString()
+                val parsed = runCatching { Json.parseToJsonElement(text) }.getOrElse { JsonPrimitive(text) }
+                if (result.isError) {
+                    JsonObject(
+                        mapOf(
+                            "error" to JsonPrimitive("action failed: $action"),
+                            "result" to parsed
+                        )
+                    )
+                } else {
+                    parsed
+                }
+            } catch (e: ToolErrorException) {
+                JsonObject(
+                    mapOf(
+                        "error" to JsonPrimitive(e.message),
+                        "code" to JsonPrimitive(e.errorCode)
+                    )
+                )
+            } catch (e: Exception) {
+                JsonObject(
+                    mapOf(
+                        "error" to JsonPrimitive(e.message ?: "action failed: $action"),
+                        "code" to JsonPrimitive(BusinessErrorCodes.INTERNAL_ERROR)
+                    )
+                )
+            }
+        }
+        return McpToolCallResult(listOf(McpToolContent(text = JsonArray(results).toString())))
+    }
 }
 
 private fun cardToJson(card: AnkiCardInfo, showAnswer: Boolean = true): JsonObject {
