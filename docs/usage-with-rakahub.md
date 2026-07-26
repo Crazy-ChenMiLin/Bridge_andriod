@@ -59,7 +59,7 @@
 | `findNotes` | 使用 Anki 搜索语法查找 noteId |
 | `findCards` | 使用 Anki 搜索语法查找 cardId（安卓端通过 note 搜索再映射卡片） |
 | `notesInfo` | 查询 note 的字段、标签、笔记类型和 cardId；字段形状为 `fields.字段名.value/order` |
-| `cardsInfo` | 按 cardId 读取卡片详情 |
+| `cardsInfo` | 按 cardId 读取卡片详情；包含 PC 常见的 `note`、`modelName`、`fields`、`fieldOrder`，也保留安卓状态字段 |
 | `cardsToNotes` | 把 cardId 映射回 noteId |
 | `getDecks` | 按 cardId 分组返回所属牌组 |
 | `suspend` | 按 cardId 暂停卡片（安卓公开 API 支持暂停，但不支持可靠取消暂停） |

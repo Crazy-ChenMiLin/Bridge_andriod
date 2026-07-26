@@ -14,6 +14,7 @@ import xyz.chenmilin.ankimcpbridge.anki.AddGenericNoteRequest
 import xyz.chenmilin.ankimcpbridge.anki.AnkiCardInfo
 import xyz.chenmilin.ankimcpbridge.anki.AnkiDroidNotInstalledException
 import xyz.chenmilin.ankimcpbridge.anki.AnkiPermissionDeniedException
+import xyz.chenmilin.ankimcpbridge.anki.AnkiNoteInfo
 import xyz.chenmilin.ankimcpbridge.anki.AnkiNoteTypeDetail
 import xyz.chenmilin.ankimcpbridge.anki.AnkiRepository
 import xyz.chenmilin.ankimcpbridge.anki.FieldMappingException
@@ -185,20 +186,38 @@ class PcMultiTool(private val toolRegistry: ToolRegistry) : McpTool {
     }
 }
 
-private fun cardToJson(card: AnkiCardInfo, showAnswer: Boolean = true): JsonObject {
+private fun noteFieldsToJson(fields: Map<String, String>): JsonObject =
+    JsonObject(
+        fields.entries.mapIndexed { index, entry ->
+            entry.key to JsonObject(
+                mapOf(
+                    "value" to JsonPrimitive(entry.value),
+                    "order" to JsonPrimitive(index)
+                )
+            )
+        }.toMap()
+    )
+
+private fun cardToJson(card: AnkiCardInfo, showAnswer: Boolean = true, note: AnkiNoteInfo? = null): JsonObject {
     val values = mutableMapOf<String, JsonElement>(
         "cardId" to JsonPrimitive(card.id),
         "noteId" to JsonPrimitive(card.noteId),
+        "note" to JsonPrimitive(card.noteId),
         "ord" to JsonPrimitive(card.ord),
+        "fieldOrder" to JsonPrimitive(card.ord),
         "deckId" to JsonPrimitive(card.deckId),
         "deckName" to JsonPrimitive(card.deckName),
         "cardName" to JsonPrimitive(card.cardName),
         "question" to JsonPrimitive(card.question),
         "questionSimple" to JsonPrimitive(card.questionSimple),
+        "modelName" to (note?.modelName?.let { JsonPrimitive(it) } ?: JsonNull),
+        "fields" to (note?.fields?.let { noteFieldsToJson(it) } ?: JsonObject(emptyMap())),
+        "css" to (note?.css?.let { JsonPrimitive(it) } ?: JsonPrimitive("")),
         "type" to jsonIntOrNull(card.type),
         "queue" to jsonIntOrNull(card.queue),
         "due" to (card.due?.let { JsonPrimitive(it) } ?: JsonNull),
         "interval" to jsonIntOrNull(card.interval),
+        "factor" to jsonIntOrNull(card.easeFactor),
         "easeFactor" to jsonIntOrNull(card.easeFactor),
         "reps" to jsonIntOrNull(card.reps),
         "lapses" to jsonIntOrNull(card.lapses)
@@ -752,16 +771,7 @@ class PcNotesInfoTool(private val ankiRepository: AnkiRepository) : McpTool {
                         "modelName" to JsonPrimitive(info.modelName),
                         "modelId" to JsonPrimitive(info.noteTypeId),
                         "noteTypeId" to JsonPrimitive(info.noteTypeId),
-                        "fields" to JsonObject(
-                            info.fields.entries.mapIndexed { index, entry ->
-                                entry.key to JsonObject(
-                                    mapOf(
-                                        "value" to JsonPrimitive(entry.value),
-                                        "order" to JsonPrimitive(index)
-                                    )
-                                )
-                            }.toMap()
-                        ),
+                        "fields" to noteFieldsToJson(info.fields),
                         "tags" to stringArray(info.tags),
                         "cards" to JsonArray(
                             cardsByNoteId[info.id]
@@ -798,7 +808,14 @@ class PcCardsInfoTool(private val ankiRepository: AnkiRepository) : McpTool {
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: cards")
         return try {
             val cards = cardIds.mapNotNull { ankiRepository.presentCard(it) }
-            McpToolCallResult(listOf(McpToolContent(text = JsonArray(cards.map { cardToJson(it) }).toString())))
+            val notesById = ankiRepository.notesInfo(cards.map { it.noteId }.distinct()).associateBy { it.id }
+            McpToolCallResult(
+                listOf(
+                    McpToolContent(
+                        text = JsonArray(cards.map { card -> cardToJson(card, note = notesById[card.noteId]) }).toString()
+                    )
+                )
+            )
         } catch (e: Exception) {
             pcExceptionError(e)
         }

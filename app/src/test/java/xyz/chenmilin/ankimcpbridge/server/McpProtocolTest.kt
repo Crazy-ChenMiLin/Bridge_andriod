@@ -787,7 +787,12 @@ class McpProtocolTest {
         val cardInfoList = Json.parseToJsonElement(
             cardInfo.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
         ).jsonArray
-        assertEquals(noteId, cardInfoList[0].jsonObject["noteId"]!!.jsonPrimitive.long)
+        val cardInfoJson = cardInfoList[0].jsonObject
+        assertEquals(noteId, cardInfoJson["noteId"]!!.jsonPrimitive.long)
+        assertEquals(noteId, cardInfoJson["note"]!!.jsonPrimitive.long)
+        assertEquals("Basic", cardInfoJson["modelName"]!!.jsonPrimitive.content)
+        assertEquals(0, cardInfoJson["fieldOrder"]!!.jsonPrimitive.int)
+        assertEquals("Card front", cardInfoJson["fields"]!!.jsonObject["Front"]!!.jsonObject["value"]!!.jsonPrimitive.content)
 
         val cardsToNotes = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(
