@@ -5,6 +5,7 @@ import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import xyz.chenmilin.ankimcpbridge.anki.AddGenericNoteRequest
 import xyz.chenmilin.ankimcpbridge.anki.FakeAnkiRepository
 import xyz.chenmilin.ankimcpbridge.logging.AppLogRepository
 
@@ -106,7 +107,7 @@ class McpProtocolTest {
         val toolNames = response.result!!.jsonObject["tools"]!!.jsonArray
             .map { it.jsonObject["name"]!!.jsonPrimitive.content }
 
-        assertEquals("tools/list 应只暴露当前文档声明的 47 个真实支持工具", 47, toolNames.size)
+        assertEquals("tools/list should expose 49 supported tools", 49, toolNames.size)
         assertTrue(toolNames.containsAll(
             listOf(
                 "version", "multi", "listDecks", "deckNames", "deckNamesAndIds", "createDeck",
@@ -114,10 +115,10 @@ class McpProtocolTest {
                 "modelNames", "modelNamesAndIds", "modelFieldNames", "addNote", "addNotes", "canAddNotes",
                 "findNotes", "findCards", "notesInfo", "cardsInfo", "cardsToNotes",
                 "getDecks", "suspend", "areSuspended", "areDue", "getIntervals",
-                "updateNoteFields", "getTags", "addTags", "removeTags",
+                "updateNoteFields", "deleteNotes", "getTags", "addTags", "removeTags",
                 "replaceTags", "modelTemplates", "modelFieldsOnTemplates", "modelStyling",
                 "get_cards", "get_due_cards", "present_card", "changeDeck", "rate_card",
-                "deckStats", "collection_stats"
+                "deckStats", "collection_stats", "delete_notes"
             )
         ))
         assertFalse("Android 不应暴露 PC GUI 占位工具", toolNames.contains("guiBrowse"))
@@ -494,6 +495,63 @@ class McpProtocolTest {
         val decks = ankiRepo.listDecks().map { it.name }
         assertTrue(decks.contains("PC Per Note A"))
         assertTrue(decks.contains("PC Per Note B"))
+    }
+
+    @Test
+    fun `pc compatible deleteNotes deletes existing notes`() = runTest {
+        val addResponse = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "addNote",
+                "arguments" to mapOf(
+                    "deckName" to "PC Delete",
+                    "modelName" to "Basic",
+                    "fields" to mapOf("Front" to "Delete Q", "Back" to "Delete A")
+                )
+            ))
+        ))
+        assertNull(addResponse.error)
+        val noteId = Json.parseToJsonElement(
+            addResponse.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonPrimitive.long
+
+        val deleteResponse = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "deleteNotes",
+                "arguments" to mapOf("notes" to listOf(noteId))
+            ))
+        ))
+        assertNull(deleteResponse.error)
+        assertFalse(deleteResponse.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        assertTrue(ankiRepo.notesInfo(listOf(noteId)).isEmpty())
+    }
+
+    @Test
+    fun `native delete_notes reports deleted and missing counts`() = runTest {
+        val basic = ankiRepo.listNoteTypes().first { it.name == "Basic" }
+        val added = ankiRepo.addNote(
+            AddGenericNoteRequest(
+                deck = "Native Delete",
+                noteTypeId = basic.id,
+                fields = mapOf("Front" to "Native delete Q", "Back" to "A")
+            )
+        )
+        val noteId = added.noteId!!
+
+        val response = parseResponse(handler.handleRequest(
+            buildRequest("tools/call", mapOf(
+                "name" to "delete_notes",
+                "arguments" to mapOf("noteIds" to listOf(noteId, 999999999L))
+            ))
+        ))
+        assertNull(response.error)
+        assertTrue(response.result!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
+        val result = Json.parseToJsonElement(
+            response.result!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        ).jsonObject
+        assertEquals(2, result["requested"]!!.jsonPrimitive.int)
+        assertEquals(1, result["deleted"]!!.jsonPrimitive.int)
+        assertEquals(1, result["missing"]!!.jsonPrimitive.int)
+        assertTrue(ankiRepo.notesInfo(listOf(noteId)).isEmpty())
     }
 
     @Test

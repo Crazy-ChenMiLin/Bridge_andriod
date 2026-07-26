@@ -1078,6 +1078,42 @@ class PcGetTagsTool(private val ankiRepository: AnkiRepository) : McpTool {
     }
 }
 
+class PcDeleteNotesTool(private val ankiRepository: AnkiRepository) : McpTool {
+    override val definition = McpToolDef(
+        name = "deleteNotes",
+        description = "PC AnkiConnect compatible: delete notes by explicit note IDs. Deleting a note also removes its cards.",
+        inputSchema = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("object"),
+                "properties" to JsonObject(
+                    mapOf("notes" to JsonObject(mapOf("type" to JsonPrimitive("array"))))
+                ),
+                "required" to JsonArray(listOf(JsonPrimitive("notes")))
+            )
+        )
+    )
+
+    override suspend fun call(arguments: JsonObject?): McpToolCallResult {
+        val ids = arguments?.get("notes")?.jsonArray
+            ?.mapNotNull { it.jsonPrimitive.content.toLongOrNull() }
+            ?.filter { it > 0 }
+            ?.distinct()
+            ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "missing parameter: notes")
+        if (ids.isEmpty()) {
+            return pcBusinessError(BusinessErrorCodes.INVALID_ARGUMENT, "notes must contain positive note IDs")
+        }
+        if (ids.size > 100) {
+            return pcBusinessError(BusinessErrorCodes.BATCH_TOO_LARGE, "deleteNotes supports at most 100 note IDs per call")
+        }
+        return try {
+            val deleted = ankiRepository.deleteNotes(ids)
+            McpToolCallResult(listOf(McpToolContent(text = JsonNull.toString())), isError = deleted != ids.size)
+        } catch (e: Exception) {
+            pcExceptionError(e)
+        }
+    }
+}
+
 abstract class PcTagMutationTool(
     private val ankiRepository: AnkiRepository,
     private val toolName: String,

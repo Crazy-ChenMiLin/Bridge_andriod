@@ -404,6 +404,23 @@ class AnkiDroidRepository(context: Context) : AnkiRepository {
         }
     }
 
+    override suspend fun deleteNotes(noteIds: List<Long>): Int = withAnkiRetry {
+        withContext(Dispatchers.IO) {
+            ensureAvailable()
+            var deleted = 0
+            noteIds.distinct().take(100).forEach { noteId ->
+                if (readNoteInfo(noteId) == null) return@forEach
+                val uri = Uri.withAppendedPath(FlashCardsContract.Note.CONTENT_URI, noteId.toString())
+                val rows = appContext.contentResolver.delete(uri, null, null)
+                if (rows > 0 && readNoteInfo(noteId) == null) {
+                    deleted++
+                }
+            }
+            if (deleted > 0) notifyAnkiChanged()
+            deleted
+        }
+    }
+
     override suspend fun getTags(pattern: String?): List<String> = withAnkiRetry {
         withContext(Dispatchers.IO) {
             ensureAvailable()

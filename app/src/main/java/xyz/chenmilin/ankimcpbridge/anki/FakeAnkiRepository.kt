@@ -370,6 +370,15 @@ class FakeAnkiRepository : AnkiRepository {
         return true
     }
 
+    override suspend fun deleteNotes(noteIds: List<Long>): Int {
+        if (!installed) throw AnkiDroidNotInstalledException()
+        if (!permissionGranted) throw AnkiPermissionDeniedException()
+        val ids = noteIds.distinct().toSet()
+        val before = notes.size
+        notes.removeAll { ids.contains(it.id) }
+        return before - notes.size
+    }
+
     override suspend fun getTags(pattern: String?): List<String> {
         if (!installed) throw AnkiDroidNotInstalledException()
         if (!permissionGranted) throw AnkiPermissionDeniedException()

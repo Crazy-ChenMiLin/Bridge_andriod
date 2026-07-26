@@ -19,6 +19,7 @@ interface AnkiRepository {
     suspend fun notesInfo(noteIds: List<Long>): List<AnkiNoteInfo>
     suspend fun findDuplicateNotes(noteTypeId: Long, firstFieldValue: String): List<Long>
     suspend fun updateNoteFields(noteId: Long, fields: Map<String, String>): Boolean
+    suspend fun deleteNotes(noteIds: List<Long>): Int
     suspend fun getTags(pattern: String? = null): List<String>
     suspend fun addTags(noteIds: List<Long>, tags: List<String>): Int
     suspend fun removeTags(noteIds: List<Long>, tags: List<String>): Int

@@ -227,6 +227,24 @@ class FakeAnkiRepositoryTest {
     // ─── v0.2.2：空 deck 校验 / 自动创建牌组 / deckCreated 上报 ───
 
     @Test
+    fun `deleteNotes removes notes by id`() = runTest {
+        val basic = repo.listNoteTypes().first { it.name == "Basic" }
+        val added = repo.addNote(
+            AddGenericNoteRequest(
+                deck = "Delete Test",
+                noteTypeId = basic.id,
+                fields = mapOf("Front" to "delete me", "Back" to "ok")
+            )
+        )
+        val noteId = added.noteId!!
+
+        assertEquals(1, repo.notesInfo(listOf(noteId)).size)
+        assertEquals(1, repo.deleteNotes(listOf(noteId)))
+        assertTrue(repo.notesInfo(listOf(noteId)).isEmpty())
+        assertEquals(0, repo.deleteNotes(listOf(noteId)))
+    }
+
+    @Test
     fun `ensureDeck reports created true for new deck and false for existing`() = runTest {
         val created = repo.ensureDeck("v022 新牌组")
         assertTrue(created.created)

@@ -40,6 +40,7 @@ class McpProtocolHandler(
         toolRegistry.register(GetNoteTypeTool(ankiRepository))
         toolRegistry.register(AddNoteTool(ankiRepository))
         toolRegistry.register(AddNotesTool(ankiRepository))
+        toolRegistry.register(DeleteNotesTool(ankiRepository))
         // PC Anki MCP compatible aliases for actions that map cleanly to
         // AnkiDroid's public ContentProvider API.
         registerPcCompatibleTools()
@@ -70,6 +71,7 @@ class McpProtocolHandler(
         toolRegistry.register(PcAreDueTool(ankiRepository))
         toolRegistry.register(PcGetIntervalsTool(ankiRepository))
         toolRegistry.register(PcUpdateNoteFieldsTool(ankiRepository))
+        toolRegistry.register(PcDeleteNotesTool(ankiRepository))
         toolRegistry.register(PcGetTagsTool(ankiRepository))
         toolRegistry.register(PcAddTagsTool(ankiRepository))
         toolRegistry.register(PcRemoveTagsTool(ankiRepository))
