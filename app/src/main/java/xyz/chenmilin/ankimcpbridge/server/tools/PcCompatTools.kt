@@ -741,6 +741,10 @@ class PcNotesInfoTool(private val ankiRepository: AnkiRepository) : McpTool {
             ?: throwToolError(BusinessErrorCodes.INVALID_ARGUMENT, "缺少参数: notes")
         return try {
             val infos = ankiRepository.notesInfo(ids)
+            val requestedIds = ids.toSet()
+            val cardsByNoteId = ankiRepository.getCards(limit = Int.MAX_VALUE)
+                .filter { it.noteId in requestedIds }
+                .groupBy { it.noteId }
             val json = JsonArray(infos.map { info ->
                 JsonObject(
                     mapOf(
@@ -759,7 +763,12 @@ class PcNotesInfoTool(private val ankiRepository: AnkiRepository) : McpTool {
                             }.toMap()
                         ),
                         "tags" to stringArray(info.tags),
-                        "cards" to JsonArray(emptyList()),
+                        "cards" to JsonArray(
+                            cardsByNoteId[info.id]
+                                .orEmpty()
+                                .sortedBy { it.ord }
+                                .map { JsonPrimitive(it.id) }
+                        ),
                         "css" to (info.css?.let { JsonPrimitive(it) } ?: JsonNull)
                     )
                 )

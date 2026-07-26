@@ -680,6 +680,7 @@ class McpProtocolTest {
         assertEquals("Basic", noteInfo["modelName"]!!.jsonPrimitive.content)
         assertEquals("Original front", noteInfo["fields"]!!.jsonObject["Front"]!!.jsonObject["value"]!!.jsonPrimitive.content)
         assertEquals(0, noteInfo["fields"]!!.jsonObject["Front"]!!.jsonObject["order"]!!.jsonPrimitive.int)
+        assertEquals(listOf(noteId * 10), noteInfo["cards"]!!.jsonArray.map { it.jsonPrimitive.long })
 
         val update = parseResponse(handler.handleRequest(
             buildRequest("tools/call", mapOf(
